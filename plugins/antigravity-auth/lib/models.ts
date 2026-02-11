@@ -13,7 +13,7 @@ import type { AntigravityModelInfo, ThinkingLevel, ImageSize } from './types';
 
 const MODEL_MAPPING: Record<string, string> = {
     // Direct support models
-    'claude-opus-4-5-thinking': 'claude-opus-4-5-thinking',
+    'claude-opus-4-6-thinking': 'claude-opus-4-6-thinking',
     'claude-sonnet-4-5': 'claude-sonnet-4-5',
     'claude-sonnet-4-5-thinking': 'claude-sonnet-4-5-thinking',
 
@@ -21,8 +21,8 @@ const MODEL_MAPPING: Record<string, string> = {
     'claude-sonnet-4-5-20250929': 'claude-sonnet-4-5-thinking',
     'claude-3-5-sonnet-20241022': 'claude-sonnet-4-5',
     'claude-3-5-sonnet-20240620': 'claude-sonnet-4-5',
-    'claude-opus-4': 'claude-opus-4-5-thinking',
-    'claude-opus-4-5-20251101': 'claude-opus-4-5-thinking',
+    'claude-opus-4': 'claude-opus-4-6-thinking',
+    'claude-opus-4-5-20251101': 'claude-opus-4-6-thinking',
     'claude-haiku-4': 'claude-sonnet-4-5',
     'claude-3-haiku-20240307': 'claude-sonnet-4-5',
     'claude-haiku-4-5-20251001': 'claude-sonnet-4-5',
@@ -240,13 +240,13 @@ export const ANTIGRAVITY_MODELS: AntigravityModelInfo[] = [
     },
 
     // -------------------------------------------------------------------------
-    // Claude Opus 4.5 (Thinking variants)
+    // Claude Opus 4.6 (Thinking variants)
     // -------------------------------------------------------------------------
     {
-        id: 'claude-opus-4-5-thinking',
-        name: 'Claude Opus 4.5 (Thinking)',
-        description: 'Claude Opus 4.5 with extended thinking enabled',
-        baseModel: 'claude-opus-4-5-thinking',
+        id: 'claude-opus-4-6-thinking',
+        name: 'Claude Opus 4.6 (Thinking)',
+        description: 'Claude Opus 4.6 with extended thinking enabled',
+        baseModel: 'claude-opus-4-6-thinking',
         family: 'claude',
         thinking: 'medium',
         thinkingBudget: 16384,
@@ -254,10 +254,10 @@ export const ANTIGRAVITY_MODELS: AntigravityModelInfo[] = [
         maxOutputTokens: 65536,
     },
     {
-        id: 'claude-opus-4-5-thinking-high',
-        name: 'Claude Opus 4.5 (High Thinking)',
-        description: 'Claude Opus 4.5 with high thinking budget',
-        baseModel: 'claude-opus-4-5-thinking',
+        id: 'claude-opus-4-6-thinking-high',
+        name: 'Claude Opus 4.6 (High Thinking)',
+        description: 'Claude Opus 4.6 with high thinking budget',
+        baseModel: 'claude-opus-4-6-thinking',
         family: 'claude',
         thinking: 'high',
         thinkingBudget: 32768,
@@ -265,10 +265,10 @@ export const ANTIGRAVITY_MODELS: AntigravityModelInfo[] = [
         maxOutputTokens: 65536,
     },
     {
-        id: 'claude-opus-4-5-thinking-low',
-        name: 'Claude Opus 4.5 (Low Thinking)',
-        description: 'Claude Opus 4.5 with low thinking budget',
-        baseModel: 'claude-opus-4-5-thinking',
+        id: 'claude-opus-4-6-thinking-low',
+        name: 'Claude Opus 4.6 (Low Thinking)',
+        description: 'Claude Opus 4.6 with low thinking budget',
+        baseModel: 'claude-opus-4-6-thinking',
         family: 'claude',
         thinking: 'low',
         thinkingBudget: 8192,
@@ -313,8 +313,8 @@ export const ANTIGRAVITY_MODELS: AntigravityModelInfo[] = [
     {
         id: 'claude-opus-4',
         name: 'Claude Opus 4',
-        description: 'Alias for Claude Opus 4.5 Thinking',
-        baseModel: 'claude-opus-4-5-thinking',
+        description: 'Alias for Claude Opus 4.6 Thinking',
+        baseModel: 'claude-opus-4-6-thinking',
         family: 'claude',
         thinking: 'medium',
         thinkingBudget: 16384,
@@ -324,8 +324,8 @@ export const ANTIGRAVITY_MODELS: AntigravityModelInfo[] = [
     {
         id: 'claude-opus-4-5-20251101',
         name: 'Claude Opus 4.5 (20251101)',
-        description: 'Alias for Claude Opus 4.5 Thinking',
-        baseModel: 'claude-opus-4-5-thinking',
+        description: 'Alias for Claude Opus 4.6 Thinking',
+        baseModel: 'claude-opus-4-6-thinking',
         family: 'claude',
         thinking: 'medium',
         thinkingBudget: 16384,

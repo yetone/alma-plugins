@@ -5,7 +5,7 @@ Use your Google Antigravity IDE subscription to access Claude and Gemini models 
 ## Features
 
 - **OAuth Authentication**: Secure Google OAuth2 PKCE flow to authenticate with your Antigravity account
-- **Claude Models**: Access Claude Sonnet 4.5 and Opus 4.5 with extended thinking support
+- **Claude Models**: Access Claude Sonnet 4.5 and Opus 4.6 with extended thinking support
 - **Gemini Models**: Access Gemini 2.0, 2.5, and 3.0 series
 - **Thinking Support**: Multiple thinking budget levels for Claude thinking models
 - **Streaming Support**: Real-time streaming responses
@@ -19,11 +19,11 @@ Use your Google Antigravity IDE subscription to access Claude and Gemini models 
 - `claude-sonnet-4-5-thinking` - With medium thinking (default, 16K tokens)
 - `claude-sonnet-4-5-thinking-high` - With high thinking budget (32K tokens)
 - `claude-sonnet-4-5-thinking-low` - With low thinking budget (8K tokens)
-- `claude-opus-4-5-thinking` - Claude Opus 4.5 with extended thinking (16K tokens)
-- `claude-opus-4-5-thinking-high` - With high thinking budget (32K tokens)
-- `claude-opus-4-5-thinking-low` - With low thinking budget (8K tokens)
+- `claude-opus-4-6-thinking` - Claude Opus 4.6 with extended thinking (16K tokens)
+- `claude-opus-4-6-thinking-high` - With high thinking budget (32K tokens)
+- `claude-opus-4-6-thinking-low` - With low thinking budget (8K tokens)
 
-> **Note**: Claude Opus 4.5 without thinking is not available via Antigravity API.
+> **Note**: Claude Opus 4.6 without thinking is not available via Antigravity API.
 
 ### Gemini Series
 
