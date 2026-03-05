@@ -399,6 +399,59 @@ export interface ChatAPI {
 }
 
 // ============================================================================
+// Channel API
+// ============================================================================
+
+/**
+ * A message sent/received through an external channel integration.
+ */
+export interface ChannelMessage {
+    id: string;
+    /** Plugin-defined channel id (e.g. "dingding", "slack"). */
+    channelId: string;
+    /** Plugin-defined conversation/session id (e.g. group chat id). */
+    conversationId: string;
+    /** Platform user id (if available). */
+    authorId?: string;
+    authorName?: string;
+    /** Plain text content (rich parts can be added later). */
+    content: string;
+    createdAt: string;
+}
+
+/**
+ * Handler for sending messages to a channel.
+ */
+export interface ChannelSendHandler {
+    sendMessage(request: {
+        conversationId: string;
+        content: string;
+        replyToMessageId?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<{ messageId?: string }>;
+}
+
+/**
+ * Channel definition for registering custom channels.
+ */
+export interface ChannelDefinition {
+    id: string;
+    name: string;
+    icon?: string;
+    capabilities?: Array<'send' | 'webhook-receive' | 'attachments' | 'reply'>;
+    send?: ChannelSendHandler;
+}
+
+/**
+ * API for managing channel integrations.
+ */
+export interface ChannelsAPI {
+    list(): Promise<Array<{ id: string; name: string; enabled: boolean }>>;
+    get(id: string): Promise<{ id: string; name: string; enabled: boolean } | undefined>;
+    register(channel: ChannelDefinition): Disposable;
+}
+
+// ============================================================================
 // Provider API
 // ============================================================================
 
@@ -564,6 +617,9 @@ export interface PluginContext {
 
     // Provider APIs
     readonly providers: ProvidersAPI;
+
+    // Channel APIs
+    readonly channels: ChannelsAPI;
 
     // Workspace APIs
     readonly workspace: WorkspaceAPI;
