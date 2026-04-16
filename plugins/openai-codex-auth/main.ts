@@ -560,59 +560,10 @@ export async function activate(context: PluginContext): Promise<PluginActivation
     const findActiveUserMessageIndex = (messages: any[] | undefined): number => {
         if (!Array.isArray(messages) || messages.length === 0) return -1;
 
-        let lastUserIndex = -1;
         for (let i = messages.length - 1; i >= 0; i--) {
             if (messages[i]?.role === 'user') {
-                lastUserIndex = i;
-                break;
+                return i;
             }
-        }
-
-        if (lastUserIndex === -1) return -1;
-
-        let sawAssistantText = false;
-        let sawToolActivity = false;
-        let sawAssistantTextAfterToolActivity = false;
-
-        for (let i = lastUserIndex + 1; i < messages.length; i++) {
-            const message = messages[i];
-            if (!message || typeof message !== 'object') continue;
-
-            if (message.role === 'assistant') {
-                const hasAssistantText = !!extractTextContent(message.content);
-                const hasToolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
-
-                if (hasToolCalls) {
-                    sawToolActivity = true;
-                    sawAssistantTextAfterToolActivity = false;
-                    if (hasAssistantText) {
-                        sawAssistantText = true;
-                    }
-                    continue;
-                }
-
-                if (hasAssistantText) {
-                    if (sawToolActivity) {
-                        sawAssistantTextAfterToolActivity = true;
-                    } else {
-                        sawAssistantText = true;
-                    }
-                }
-                continue;
-            }
-
-            if (message.role === 'tool') {
-                sawToolActivity = true;
-                sawAssistantTextAfterToolActivity = false;
-            }
-        }
-
-        if (sawToolActivity && !sawAssistantTextAfterToolActivity) {
-            return lastUserIndex;
-        }
-
-        if (!sawToolActivity && !sawAssistantText) {
-            return lastUserIndex;
         }
 
         return -1;
