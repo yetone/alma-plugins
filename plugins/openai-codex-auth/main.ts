@@ -15,6 +15,9 @@
  */
 
 import type { PluginContext, PluginActivation } from 'alma-plugin-api';
+import { appendFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { TokenStore } from './lib/token-store';
 import { getAuthorizationUrl, exchangeCodeForTokens } from './lib/auth';
 import { getActiveModels, setCachedModels, buildModelsFromApiResponse, getBaseModelId, getReasoningEffort } from './lib/models';
@@ -28,6 +31,8 @@ import { addAlmaBridgeMessage } from './lib/alma-codex-bridge';
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api';
 const DUMMY_API_KEY = 'chatgpt-oauth';
 const DEFAULT_CODEX_INSTRUCTIONS = 'You are Codex running inside Alma. Help the user accurately, stay concise, and use available tools when needed.';
+const DEBUG_LOG_PATH = join(homedir(), 'Library', 'Application Support', 'alma', 'openai-codex-auth.debug.log');
+const MAX_CHAT_HISTORY_MESSAGES = 40;
 
 // OpenAI-specific headers (matching opencode)
 const OPENAI_HEADERS = {
@@ -62,6 +67,95 @@ export async function activate(context: PluginContext): Promise<PluginActivation
     // Initialize token store
     const tokenStore = new TokenStore(storage.secrets, logger);
     await tokenStore.initialize();
+
+    const appendDebugLog = (event: string, payload?: unknown) => {
+        try {
+            appendFileSync(DEBUG_LOG_PATH, `${JSON.stringify({
+                ts: new Date().toISOString(),
+                event,
+                payload,
+            })}\n`);
+        } catch {
+            // Best-effort debug logging only.
+        }
+    };
+
+    const logSsePreview = (response: Response, meta: Record<string, any>) => {
+        if (!response.body) {
+            appendDebugLog('codex-sse-preview-no-body', meta);
+            return;
+        }
+
+        const cloned = response.clone();
+        void (async () => {
+            const reader = cloned.body?.getReader();
+            if (!reader) {
+                appendDebugLog('codex-sse-preview-no-reader', meta);
+                return;
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+            const preview: Array<Record<string, any>> = [];
+            const startedAt = Date.now();
+
+            try {
+                while (preview.length < 12 && Date.now() - startedAt < 15000) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        const raw = line.substring(6).trim();
+                        if (!raw) continue;
+
+                        if (raw === '[DONE]') {
+                            preview.push({ type: '[DONE]' });
+                            break;
+                        }
+
+                        try {
+                            const event = JSON.parse(raw);
+                            preview.push({
+                                type: event?.type || 'unknown',
+                                item_id: event?.item_id,
+                                output_index: event?.output_index,
+                                delta_len: typeof event?.delta === 'string' ? event.delta.length : undefined,
+                                has_response: !!event?.response,
+                            });
+                        } catch {
+                            preview.push({
+                                type: 'raw',
+                                raw: raw.slice(0, 400),
+                            });
+                        }
+
+                        if (preview.length >= 12) break;
+                    }
+                }
+
+                appendDebugLog('codex-sse-preview', {
+                    ...meta,
+                    preview,
+                });
+            } catch (error) {
+                appendDebugLog('codex-sse-preview-error', {
+                    ...meta,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            } finally {
+                try {
+                    await reader.cancel();
+                } catch {
+                    // Ignore clone cancellation errors.
+                }
+            }
+        })();
+    };
 
     // =========================================================================
     // Custom Fetch Wrapper (matching opencode-openai-codex-auth pattern)
@@ -324,12 +418,220 @@ export async function activate(context: PluginContext): Promise<PluginActivation
         return mapped.length > 0 ? mapped : undefined;
     };
 
+    const collectChatToolOutputIds = (messages: any[] | undefined): Set<string> => {
+        const toolOutputIds = new Set<string>();
+        if (!Array.isArray(messages)) return toolOutputIds;
+
+        for (const message of messages) {
+            if (!message || typeof message !== 'object') continue;
+            if (message.role !== 'tool') continue;
+
+            const callId = message.tool_call_id || message.call_id;
+            if (typeof callId === 'string' && callId.length > 0) {
+                toolOutputIds.add(callId);
+            }
+        }
+
+        return toolOutputIds;
+    };
+
+    const collapseUnansweredUserRetries = (messages: any[] | undefined): { messages: any[]; collapsedRetryCount: number; droppedMessageCount: number } => {
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return { messages: [], collapsedRetryCount: 0, droppedMessageCount: 0 };
+        }
+
+        const collapsed: any[] = [];
+        let pendingUserIndex = -1;
+        let sawAssistantTextSincePendingUser = false;
+        let collapsedRetryCount = 0;
+        let droppedMessageCount = 0;
+
+        for (const message of messages) {
+            if (!message || typeof message !== 'object') continue;
+
+            if (message.role === 'user') {
+                if (pendingUserIndex !== -1 && !sawAssistantTextSincePendingUser) {
+                    droppedMessageCount += collapsed.length - pendingUserIndex;
+                    collapsed.splice(pendingUserIndex);
+                    collapsedRetryCount++;
+                }
+
+                pendingUserIndex = collapsed.length;
+                sawAssistantTextSincePendingUser = false;
+                collapsed.push(message);
+                continue;
+            }
+
+            collapsed.push(message);
+
+            if (message.role === 'assistant' && extractTextContent(message.content)) {
+                pendingUserIndex = -1;
+                sawAssistantTextSincePendingUser = true;
+            }
+        }
+
+        return { messages: collapsed, collapsedRetryCount, droppedMessageCount };
+    };
+
+    const trimChatMessages = (messages: any[] | undefined): any[] => {
+        if (!Array.isArray(messages)) {
+            return [];
+        }
+
+        const systemMessages = messages.filter((message) => message?.role === 'system' || message?.role === 'developer');
+        const rawConversationMessages = messages.filter((message) => message?.role !== 'system' && message?.role !== 'developer');
+        const {
+            messages: conversationMessages,
+            collapsedRetryCount,
+            droppedMessageCount,
+        } = collapseUnansweredUserRetries(rawConversationMessages);
+
+        if (collapsedRetryCount > 0) {
+            appendDebugLog('chat-history-collapsed-retries', {
+                originalConversationCount: rawConversationMessages.length,
+                collapsedConversationCount: conversationMessages.length,
+                collapsedRetryCount,
+                droppedMessageCount,
+            });
+        }
+
+        if (messages.length <= MAX_CHAT_HISTORY_MESSAGES && collapsedRetryCount === 0) {
+            return Array.isArray(messages) ? messages : [];
+        }
+
+        if (conversationMessages.length <= MAX_CHAT_HISTORY_MESSAGES) {
+            return [...systemMessages, ...conversationMessages];
+        }
+
+        let trimmedConversation = conversationMessages.slice(-MAX_CHAT_HISTORY_MESSAGES);
+        const missingToolCallIds = new Set<string>();
+
+        for (const message of trimmedConversation) {
+            if (message?.role !== 'tool') continue;
+            const callId = message.tool_call_id || message.call_id;
+            if (typeof callId === 'string' && callId.length > 0) {
+                missingToolCallIds.add(callId);
+            }
+        }
+
+        for (let i = conversationMessages.length - MAX_CHAT_HISTORY_MESSAGES - 1; i >= 0 && missingToolCallIds.size > 0; i--) {
+            const message = conversationMessages[i];
+            if (message?.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue;
+
+            const toolCallIds = message.tool_calls
+                .map((toolCall: any) => toolCall?.id)
+                .filter((callId: unknown): callId is string => typeof callId === 'string' && callId.length > 0);
+
+            if (!toolCallIds.some((callId: string) => missingToolCallIds.has(callId))) continue;
+
+            trimmedConversation.unshift(message);
+            for (const callId of toolCallIds) {
+                missingToolCallIds.delete(callId);
+            }
+        }
+
+        let droppedDanglingToolOutputs = 0;
+        if (missingToolCallIds.size > 0) {
+            trimmedConversation = trimmedConversation.filter((message) => {
+                if (message?.role !== 'tool') return true;
+                const callId = message.tool_call_id || message.call_id;
+                if (typeof callId === 'string' && missingToolCallIds.has(callId)) {
+                    droppedDanglingToolOutputs++;
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        const trimmed = [...systemMessages, ...trimmedConversation];
+
+        appendDebugLog('chat-history-trimmed', {
+            originalCount: messages.length,
+            trimmedCount: trimmed.length,
+            keptConversationCount: trimmedConversation.length,
+            keptSystemCount: systemMessages.length,
+            unresolvedToolOutputsDropped: droppedDanglingToolOutputs,
+        });
+
+        logger.warn(`[DEBUG] Trimmed chat history from ${messages.length} to ${trimmed.length} messages`);
+        return trimmed;
+    };
+
+    const findActiveUserMessageIndex = (messages: any[] | undefined): number => {
+        if (!Array.isArray(messages) || messages.length === 0) return -1;
+
+        let lastUserIndex = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i]?.role === 'user') {
+                lastUserIndex = i;
+                break;
+            }
+        }
+
+        if (lastUserIndex === -1) return -1;
+
+        let sawAssistantText = false;
+        let sawToolActivity = false;
+        let sawAssistantTextAfterToolActivity = false;
+
+        for (let i = lastUserIndex + 1; i < messages.length; i++) {
+            const message = messages[i];
+            if (!message || typeof message !== 'object') continue;
+
+            if (message.role === 'assistant') {
+                const hasAssistantText = !!extractTextContent(message.content);
+                const hasToolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
+
+                if (hasToolCalls) {
+                    sawToolActivity = true;
+                    sawAssistantTextAfterToolActivity = false;
+                    if (hasAssistantText) {
+                        sawAssistantText = true;
+                    }
+                    continue;
+                }
+
+                if (hasAssistantText) {
+                    if (sawToolActivity) {
+                        sawAssistantTextAfterToolActivity = true;
+                    } else {
+                        sawAssistantText = true;
+                    }
+                }
+                continue;
+            }
+
+            if (message.role === 'tool') {
+                sawToolActivity = true;
+                sawAssistantTextAfterToolActivity = false;
+            }
+        }
+
+        if (sawToolActivity && !sawAssistantTextAfterToolActivity) {
+            return lastUserIndex;
+        }
+
+        if (!sawToolActivity && !sawAssistantText) {
+            return lastUserIndex;
+        }
+
+        return -1;
+    };
+
     const toCodexInputFromChatMessages = (messages: any[] | undefined): any[] => {
         if (!Array.isArray(messages)) return [];
 
-        const input: any[] = [];
+        messages = trimChatMessages(messages);
 
-        for (const message of messages) {
+        const input: any[] = [];
+        const toolOutputIds = collectChatToolOutputIds(messages);
+        const activeUserMessageIndex = findActiveUserMessageIndex(messages);
+        let droppedOrphanedToolCalls = 0;
+        let droppedHistoricalToolCalls = 0;
+        let droppedHistoricalToolOutputs = 0;
+        let droppedHistoricalToolAssistantMessages = 0;
+
+        for (const [index, message] of messages.entries()) {
             if (!message || typeof message !== 'object') continue;
 
             const role = message.role;
@@ -350,6 +652,16 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             }
 
             if (role === 'assistant') {
+                const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+                const isHistoricalToolAssistant = activeUserMessageIndex !== -1
+                    && index < activeUserMessageIndex
+                    && toolCalls.length > 0;
+
+                if (isHistoricalToolAssistant) {
+                    droppedHistoricalToolAssistantMessages++;
+                    continue;
+                }
+
                 const assistantText = extractTextContent(message.content);
                 if (assistantText) {
                     input.push({
@@ -358,9 +670,17 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                     });
                 }
 
-                const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+                const shouldIncludeToolHistory = activeUserMessageIndex !== -1 && index > activeUserMessageIndex;
                 for (const toolCall of toolCalls) {
+                    if (!shouldIncludeToolHistory) {
+                        droppedHistoricalToolCalls++;
+                        continue;
+                    }
                     const callId = toolCall?.id || crypto.randomUUID();
+                    if (!toolOutputIds.has(callId)) {
+                        droppedOrphanedToolCalls++;
+                        continue;
+                    }
                     const name = toolCall?.function?.name || toolCall?.name || 'tool';
                     const args = toolCall?.function?.arguments ?? toolCall?.arguments ?? '{}';
                     input.push({
@@ -374,6 +694,10 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             }
 
             if (role === 'tool') {
+                if (activeUserMessageIndex === -1 || index <= activeUserMessageIndex) {
+                    droppedHistoricalToolOutputs++;
+                    continue;
+                }
                 const callId = message.tool_call_id || message.call_id || 'unknown';
                 input.push({
                     type: 'function_call_output',
@@ -381,6 +705,18 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                     output: extractTextContent(message.content),
                 });
             }
+        }
+
+        if (droppedOrphanedToolCalls > 0 || droppedHistoricalToolCalls > 0 || droppedHistoricalToolOutputs > 0 || droppedHistoricalToolAssistantMessages > 0) {
+            logger.warn(`[DEBUG] Sanitized chat history: orphaned tool_calls=${droppedOrphanedToolCalls}, historical tool_calls=${droppedHistoricalToolCalls}, historical tool_outputs=${droppedHistoricalToolOutputs}, historical tool assistants=${droppedHistoricalToolAssistantMessages}`);
+            appendDebugLog('chat-history-sanitized', {
+                droppedOrphanedToolCalls,
+                droppedHistoricalToolCalls,
+                droppedHistoricalToolOutputs,
+                droppedHistoricalToolAssistantMessages,
+                activeUserMessageIndex,
+                messageCount: messages.length,
+            });
         }
 
         return input;
@@ -427,8 +763,60 @@ export async function activate(context: PluginContext): Promise<PluginActivation
         id: crypto.randomUUID(),
         text: '',
         toolCalls: new Map<string, { id: string; name: string; arguments: string }>(),
+        toolCallItemIds: new Map<string, string>(),
         usage: undefined as { input_tokens?: number; output_tokens?: number; reasoning_tokens?: number } | undefined,
     });
+
+    const ensureCodexToolCall = (
+        state: ReturnType<typeof createCodexEventState>,
+        item: any,
+    ): { id: string; name: string; arguments: string } | undefined => {
+        if (item?.type !== 'function_call') return undefined;
+
+        const toolCallId = item.call_id || item.id || crypto.randomUUID();
+        const existing = state.toolCalls.get(toolCallId) ?? {
+            id: toolCallId,
+            name: item.name || 'tool',
+            arguments: '',
+        };
+
+        if (typeof item.name === 'string' && item.name.length > 0) {
+            existing.name = item.name;
+        }
+
+        if (typeof item.arguments === 'string') {
+            existing.arguments = item.arguments;
+        }
+
+        state.toolCalls.set(toolCallId, existing);
+
+        if (typeof item.id === 'string' && item.id.length > 0) {
+            state.toolCallItemIds.set(item.id, toolCallId);
+        }
+
+        return existing;
+    };
+
+    const getCodexToolCallByItemId = (
+        state: ReturnType<typeof createCodexEventState>,
+        itemId: string | undefined,
+    ): { id: string; name: string; arguments: string } | undefined => {
+        if (!itemId) return undefined;
+
+        const toolCallId = state.toolCallItemIds.get(itemId);
+        if (toolCallId) {
+            return state.toolCalls.get(toolCallId);
+        }
+
+        const fallback = {
+            id: crypto.randomUUID(),
+            name: 'tool',
+            arguments: '',
+        };
+        state.toolCalls.set(fallback.id, fallback);
+        state.toolCallItemIds.set(itemId, fallback.id);
+        return fallback;
+    };
 
     const applyCodexEventToState = (state: ReturnType<typeof createCodexEventState>, event: any) => {
         if (event?.response?.id) {
@@ -449,6 +837,27 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             return;
         }
 
+        if (event?.type === 'response.output_item.added') {
+            ensureCodexToolCall(state, event.item);
+            return;
+        }
+
+        if (event?.type === 'response.function_call_arguments.delta' && typeof event.delta === 'string') {
+            const toolCall = getCodexToolCallByItemId(state, event.item_id);
+            if (toolCall) {
+                toolCall.arguments += event.delta;
+            }
+            return;
+        }
+
+        if (event?.type === 'response.function_call_arguments.done' && typeof event.arguments === 'string') {
+            const toolCall = getCodexToolCallByItemId(state, event.item_id);
+            if (toolCall) {
+                toolCall.arguments = event.arguments;
+            }
+            return;
+        }
+
         if (event?.type === 'response.output_item.done') {
             const item = event.item;
 
@@ -464,11 +873,11 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             }
 
             if (item?.type === 'function_call') {
-                const toolCallId = item.call_id || item.id || crypto.randomUUID();
-                state.toolCalls.set(toolCallId, {
-                    id: toolCallId,
-                    name: item.name || 'tool',
-                    arguments: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {}),
+                ensureCodexToolCall(state, {
+                    ...item,
+                    arguments: typeof item.arguments === 'string'
+                        ? item.arguments
+                        : JSON.stringify(item.arguments ?? {}),
                 });
             }
         }
@@ -607,7 +1016,116 @@ export async function activate(context: PluginContext): Promise<PluginActivation
         let buffer = '';
         let emittedRole = false;
         const emittedToolCalls = new Set<string>();
+        const emittedToolCallArgumentLengths = new Map<string, number>();
         let finished = false;
+
+        const emitRoleChunk = (controller: ReadableStreamDefaultController<Uint8Array>, chunkBase: Record<string, any>) => {
+            if (emittedRole) return;
+            appendDebugLog('stream-emit-role', {
+                requestedModel,
+                responseId: state.id,
+            });
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                ...chunkBase,
+                choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+            })}\n\n`));
+            emittedRole = true;
+        };
+
+        const getToolCallIndex = (toolCallId: string) => Array.from(state.toolCalls.keys()).findIndex((id) => id === toolCallId);
+
+        const emitToolCallStart = (
+            controller: ReadableStreamDefaultController<Uint8Array>,
+            chunkBase: Record<string, any>,
+            toolCall: { id: string; name: string; arguments: string } | undefined,
+        ) => {
+            if (!toolCall || emittedToolCalls.has(toolCall.id)) return;
+
+            emitRoleChunk(controller, chunkBase);
+            emittedToolCalls.add(toolCall.id);
+            emittedToolCallArgumentLengths.set(toolCall.id, 0);
+            appendDebugLog('stream-emit-tool-start', {
+                requestedModel,
+                responseId: state.id,
+                toolCallId: toolCall.id,
+                toolName: toolCall.name,
+            });
+
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                ...chunkBase,
+                choices: [{
+                    index: 0,
+                    delta: {
+                        tool_calls: [{
+                            index: Math.max(getToolCallIndex(toolCall.id), 0),
+                            id: toolCall.id,
+                            type: 'function',
+                            function: {
+                                name: toolCall.name,
+                                arguments: '',
+                            },
+                        }],
+                    },
+                    finish_reason: null,
+                }],
+            })}\n\n`));
+        };
+
+        const emitToolCallArguments = (
+            controller: ReadableStreamDefaultController<Uint8Array>,
+            chunkBase: Record<string, any>,
+            toolCallId: string,
+            delta: string,
+        ) => {
+            if (!delta) return;
+
+            const toolCall = state.toolCalls.get(toolCallId);
+            if (!toolCall) return;
+
+            emitToolCallStart(controller, chunkBase, toolCall);
+            appendDebugLog('stream-emit-tool-args', {
+                requestedModel,
+                responseId: state.id,
+                toolCallId,
+                deltaLength: delta.length,
+            });
+
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                ...chunkBase,
+                choices: [{
+                    index: 0,
+                    delta: {
+                        tool_calls: [{
+                            index: Math.max(getToolCallIndex(toolCallId), 0),
+                            function: {
+                                arguments: delta,
+                            },
+                        }],
+                    },
+                    finish_reason: null,
+                }],
+            })}\n\n`));
+
+            emittedToolCallArgumentLengths.set(toolCallId, (emittedToolCallArgumentLengths.get(toolCallId) ?? 0) + delta.length);
+        };
+
+        const flushBufferedToolCallArguments = (
+            controller: ReadableStreamDefaultController<Uint8Array>,
+            chunkBase: Record<string, any>,
+            toolCallId: string,
+        ) => {
+            const toolCall = state.toolCalls.get(toolCallId);
+            if (!toolCall) return;
+
+            emitToolCallStart(controller, chunkBase, toolCall);
+
+            const emittedLength = emittedToolCallArgumentLengths.get(toolCallId) ?? 0;
+            const remaining = toolCall.arguments.slice(emittedLength);
+            if (!remaining) return;
+
+            emitToolCallArguments(controller, chunkBase, toolCallId, remaining);
+            emittedToolCallArgumentLengths.set(toolCallId, toolCall.arguments.length);
+        };
 
         const emitFinalChunk = (controller: ReadableStreamDefaultController<Uint8Array>) => {
             if (finished) return;
@@ -647,15 +1165,34 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 model: requestedModel,
             };
 
-            if (!emittedRole && (event.type === 'response.output_text.delta' || event.type === 'response.output_item.done')) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                    ...chunkBase,
-                    choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
-                })}\n\n`));
-                emittedRole = true;
+            if (event.type === 'response.output_item.added' && event.item?.type === 'function_call') {
+                emitToolCallStart(controller, chunkBase, ensureCodexToolCall(state, event.item));
+            }
+
+            if (event.type === 'response.function_call_arguments.delta' && typeof event.delta === 'string' && event.item_id) {
+                const toolCall = getCodexToolCallByItemId(state, event.item_id);
+                if (toolCall) {
+                    emitToolCallArguments(controller, chunkBase, toolCall.id, event.delta);
+                }
+            }
+
+            if (event.type === 'response.function_call_arguments.done' && event.item_id) {
+                const toolCall = getCodexToolCallByItemId(state, event.item_id);
+                if (toolCall) {
+                    flushBufferedToolCallArguments(controller, chunkBase, toolCall.id);
+                }
+            }
+
+            if (!emittedRole && (event.type === 'response.output_text.delta' || event.type === 'response.output_item.added' || event.type === 'response.output_item.done')) {
+                emitRoleChunk(controller, chunkBase);
             }
 
             if (event.type === 'response.output_text.delta' && typeof event.delta === 'string' && event.delta.length > 0) {
+                appendDebugLog('stream-emit-text', {
+                    requestedModel,
+                    responseId: state.id,
+                    deltaLength: event.delta.length,
+                });
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({
                     ...chunkBase,
                     choices: [{ index: 0, delta: { content: event.delta }, finish_reason: null }],
@@ -665,34 +1202,15 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
                 const toolCallId = event.item.call_id || event.item.id || crypto.randomUUID();
                 if (!emittedToolCalls.has(toolCallId)) {
-                    emittedToolCalls.add(toolCallId);
-                    const toolCalls = Array.from(state.toolCalls.values());
-                    const index = toolCalls.findIndex((toolCall) => toolCall.id === toolCallId);
-                    const toolCall = state.toolCalls.get(toolCallId);
-                    if (toolCall) {
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                            ...chunkBase,
-                            choices: [{
-                                index: 0,
-                                delta: {
-                                    tool_calls: [{
-                                        index: index >= 0 ? index : 0,
-                                        id: toolCall.id,
-                                        type: 'function',
-                                        function: {
-                                            name: toolCall.name,
-                                            arguments: toolCall.arguments,
-                                        },
-                                    }],
-                                },
-                                finish_reason: null,
-                            }],
-                        })}\n\n`));
-                    }
+                    emitToolCallStart(controller, chunkBase, state.toolCalls.get(toolCallId));
                 }
+                flushBufferedToolCallArguments(controller, chunkBase, toolCallId);
             }
 
             if (event.type === 'response.completed' || event.type === 'response.done') {
+                for (const toolCallId of state.toolCalls.keys()) {
+                    flushBufferedToolCallArguments(controller, chunkBase, toolCallId);
+                }
                 emitFinalChunk(controller);
             }
         };
@@ -714,6 +1232,9 @@ export async function activate(context: PluginContext): Promise<PluginActivation
 
         const stream = new ReadableStream<Uint8Array>({
             async start(controller) {
+                appendDebugLog('stream-start', {
+                    requestedModel,
+                });
                 try {
                     while (true) {
                         const { done, value } = await reader.read();
@@ -728,10 +1249,19 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                         emitFinalChunk(controller);
                     }
                 } catch (error) {
+                    appendDebugLog('stream-error', {
+                        requestedModel,
+                        responseId: state.id,
+                        error: error instanceof Error ? error.message : String(error),
+                    });
                     controller.error(error);
                 }
             },
             cancel() {
+                appendDebugLog('stream-cancel', {
+                    requestedModel,
+                    responseId: state.id,
+                });
                 reader.cancel();
             },
         });
@@ -828,6 +1358,13 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 ? `${CODEX_BASE_URL}${URL_PATHS.CODEX_RESPONSES}`
                 : url.replace(URL_PATHS.RESPONSES, URL_PATHS.CODEX_RESPONSES);
             logger.debug(`Rewriting URL: ${url} -> ${codexUrl}`);
+            appendDebugLog('fetch-start', {
+                url,
+                codexUrl,
+                method: init?.method || 'GET',
+                isChatCompletionsRequest,
+                isModelsRequest,
+            });
 
             if (isModelsRequest && (!init?.method || init.method === 'GET')) {
                 return new Response(JSON.stringify({
@@ -860,8 +1397,20 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                     body = transformed.body;
                     isStreaming = transformed.isStreaming;
                     logger.debug(`Translated chat/completions request: model=${requestedModel || transformed.normalizedModel}, streaming=${isStreaming}`);
+                    appendDebugLog('fetch-chat-transform', {
+                        requestedModel: requestedModel || transformed.normalizedModel,
+                        streaming: isStreaming,
+                        messageCount: Array.isArray(parsed.messages) ? parsed.messages.length : 0,
+                        toolCount: Array.isArray(parsed.tools) ? parsed.tools.length : 0,
+                        hasSystemMessage: Array.isArray(parsed.messages)
+                            ? parsed.messages.some((message: any) => message?.role === 'system' || message?.role === 'developer')
+                            : false,
+                    });
                 } catch (e) {
                     logger.error('Error transforming chat completion request body:', e);
+                    appendDebugLog('fetch-chat-transform-error', {
+                        error: e instanceof Error ? e.message : String(e),
+                    });
                 }
             }
 
@@ -1016,8 +1565,26 @@ export async function activate(context: PluginContext): Promise<PluginActivation
 
                     body = JSON.stringify(transformedBody);
                     logger.debug(`Transformed request: model=${originalModel}->${normalizedModel}, reasoning=${reasoningEffort}, streaming=${isStreaming}`);
+                    appendDebugLog('fetch-responses-transform', {
+                        originalModel,
+                        normalizedModel,
+                        reasoningEffort,
+                        streaming: isStreaming,
+                        inputCount: Array.isArray(filteredInput) ? filteredInput.length : 0,
+                        toolCount: Array.isArray(parsed.tools) ? parsed.tools.length : 0,
+                        inputTypes: Array.isArray(filteredInput)
+                            ? filteredInput.reduce((acc: Record<string, number>, item: any) => {
+                                const key = item?.type || item?.role || 'unknown';
+                                acc[key] = (acc[key] || 0) + 1;
+                                return acc;
+                            }, {})
+                            : {},
+                    });
                 } catch (e) {
                     logger.error('Error transforming request body:', e);
+                    appendDebugLog('fetch-responses-transform-error', {
+                        error: e instanceof Error ? e.message : String(e),
+                    });
                 }
             }
 
@@ -1040,10 +1607,33 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             }
 
             // Step 6: Make the request
-            const response = await globalThis.fetch(codexUrl, {
-                ...init,
-                body,
-                headers,
+            let response: Response;
+            try {
+                response = await globalThis.fetch(codexUrl, {
+                    ...init,
+                    body,
+                    headers,
+                });
+            } catch (error) {
+                appendDebugLog('fetch-throw', {
+                    url,
+                    codexUrl,
+                    isChatCompletionsRequest,
+                    requestedModel,
+                    error: error instanceof Error ? error.message : String(error),
+                    errorName: error instanceof Error ? error.name : undefined,
+                });
+                throw error;
+            }
+            appendDebugLog('fetch-response', {
+                url,
+                codexUrl,
+                status: response.status,
+                ok: response.ok,
+                contentType: response.headers.get('content-type'),
+                isStreaming,
+                isChatCompletionsRequest,
+                requestedModel,
             });
 
             // Step 7: Handle error response (matching opencode's handleErrorResponse)
@@ -1058,6 +1648,13 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 // For other errors, log and return the error response
                 const errorText = await response.clone().text();
                 logger.error(`Codex API error: ${response.status} ${response.statusText}`, errorText);
+                appendDebugLog('fetch-error-response', {
+                    url,
+                    codexUrl,
+                    status: response.status,
+                    statusText: response.statusText,
+                    bodyPreview: errorText.slice(0, 2000),
+                });
 
                 // Return the error response instead of throwing
                 // This allows the caller to handle errors properly
@@ -1080,8 +1677,17 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             }
 
             if (isChatCompletionsRequest) {
+                logSsePreview(response, {
+                    path: 'chat-completions',
+                    requestedModel: requestedModel || 'unknown',
+                });
                 return await convertCodexSseToOpenAI(response, requestedModel || 'unknown');
             }
+
+            logSsePreview(response, {
+                path: 'responses',
+                requestedModel: requestedModel || 'unknown',
+            });
 
             // Return streaming response as-is
             return new Response(response.body, {
