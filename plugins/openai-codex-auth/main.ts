@@ -27,6 +27,7 @@ import { addAlmaBridgeMessage } from './lib/alma-codex-bridge';
 
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api';
 const DUMMY_API_KEY = 'chatgpt-oauth';
+const DEFAULT_CODEX_INSTRUCTIONS = 'You are Codex running inside Alma. Help the user accurately, stay concise, and use available tools when needed.';
 
 // OpenAI-specific headers (matching opencode)
 const OPENAI_HEADERS = {
@@ -241,6 +242,555 @@ export async function activate(context: PluginContext): Promise<PluginActivation
         });
     };
 
+    const extractTextContent = (content: unknown): string => {
+        if (typeof content === 'string') return content;
+        if (content == null) return '';
+        if (Array.isArray(content)) {
+            return content
+                .map((part) => {
+                    if (typeof part === 'string') return part;
+                    if (typeof part !== 'object' || part === null) return '';
+                    const record = part as Record<string, any>;
+                    if (typeof record.text === 'string') return record.text;
+                    if (typeof record.content === 'string') return record.content;
+                    return '';
+                })
+                .join('');
+        }
+        if (typeof content === 'object') {
+            const record = content as Record<string, any>;
+            if (typeof record.text === 'string') return record.text;
+            if (typeof record.content === 'string') return record.content;
+        }
+        return String(content);
+    };
+
+    const toCodexUserContent = (content: unknown): string | Array<{ type: 'input_text' | 'input_image'; text?: string; image_url?: string }> => {
+        if (typeof content === 'string') return content;
+        if (!Array.isArray(content)) return extractTextContent(content);
+
+        const parts: Array<{ type: 'input_text' | 'input_image'; text?: string; image_url?: string }> = [];
+
+        for (const part of content) {
+            if (typeof part === 'string') {
+                parts.push({ type: 'input_text', text: part });
+                continue;
+            }
+            if (typeof part !== 'object' || part === null) continue;
+
+            const record = part as Record<string, any>;
+            if ((record.type === 'text' || record.type === 'input_text') && typeof record.text === 'string') {
+                parts.push({ type: 'input_text', text: record.text });
+                continue;
+            }
+
+            if ((record.type === 'image_url' || record.type === 'input_image') && record.image_url) {
+                const imageUrl = typeof record.image_url === 'string'
+                    ? record.image_url
+                    : record.image_url?.url;
+                if (typeof imageUrl === 'string' && imageUrl.length > 0) {
+                    parts.push({ type: 'input_image', image_url: imageUrl });
+                }
+                continue;
+            }
+
+            if (record.type === 'image' && record.image) {
+                const imageUrl = typeof record.image === 'string' ? record.image : record.image?.url;
+                if (typeof imageUrl === 'string' && imageUrl.length > 0) {
+                    parts.push({ type: 'input_image', image_url: imageUrl });
+                }
+            }
+        }
+
+        if (parts.length === 0) return '';
+        if (parts.every((part) => part.type === 'input_text')) {
+            return parts.map((part) => part.text || '').join('');
+        }
+        return parts;
+    };
+
+    const toCodexFunctionTools = (tools: any[] | undefined): any[] | undefined => {
+        if (!Array.isArray(tools) || tools.length === 0) return undefined;
+
+        const mapped = tools
+            .filter((tool) => tool?.type === 'function' && tool.function?.name)
+            .map((tool) => ({
+                type: 'function',
+                name: tool.function.name,
+                description: tool.function.description,
+                parameters: tool.function.parameters,
+            }));
+
+        return mapped.length > 0 ? mapped : undefined;
+    };
+
+    const toCodexInputFromChatMessages = (messages: any[] | undefined): any[] => {
+        if (!Array.isArray(messages)) return [];
+
+        const input: any[] = [];
+
+        for (const message of messages) {
+            if (!message || typeof message !== 'object') continue;
+
+            const role = message.role;
+            if (role === 'system' || role === 'developer') {
+                input.push({
+                    role: 'developer',
+                    content: extractTextContent(message.content),
+                });
+                continue;
+            }
+
+            if (role === 'user') {
+                input.push({
+                    role: 'user',
+                    content: toCodexUserContent(message.content),
+                });
+                continue;
+            }
+
+            if (role === 'assistant') {
+                const assistantText = extractTextContent(message.content);
+                if (assistantText) {
+                    input.push({
+                        role: 'assistant',
+                        content: assistantText,
+                    });
+                }
+
+                const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+                for (const toolCall of toolCalls) {
+                    const callId = toolCall?.id || crypto.randomUUID();
+                    const name = toolCall?.function?.name || toolCall?.name || 'tool';
+                    const args = toolCall?.function?.arguments ?? toolCall?.arguments ?? '{}';
+                    input.push({
+                        type: 'function_call',
+                        call_id: callId,
+                        name,
+                        arguments: typeof args === 'string' ? args : JSON.stringify(args),
+                    });
+                }
+                continue;
+            }
+
+            if (role === 'tool') {
+                const callId = message.tool_call_id || message.call_id || 'unknown';
+                input.push({
+                    type: 'function_call_output',
+                    call_id: callId,
+                    output: extractTextContent(message.content),
+                });
+            }
+        }
+
+        return input;
+    };
+
+    const extractCodexResponsePayload = (payload: any): {
+        id: string;
+        text: string;
+        toolCalls: Array<{ id: string; name: string; arguments: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number; reasoning_tokens?: number };
+    } => {
+        const response = payload?.response ?? payload;
+        const output = Array.isArray(response?.output) ? response.output : [];
+        let text = '';
+        const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+
+        for (const item of output) {
+            if (item?.type === 'message' && Array.isArray(item.content)) {
+                for (const part of item.content) {
+                    if (part?.type === 'output_text' && typeof part.text === 'string') {
+                        text += part.text;
+                    }
+                }
+            }
+
+            if (item?.type === 'function_call') {
+                toolCalls.push({
+                    id: item.call_id || crypto.randomUUID(),
+                    name: item.name || 'tool',
+                    arguments: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {}),
+                });
+            }
+        }
+
+        return {
+            id: response?.id || crypto.randomUUID(),
+            text,
+            toolCalls,
+            usage: response?.usage,
+        };
+    };
+
+    const createCodexEventState = () => ({
+        id: crypto.randomUUID(),
+        text: '',
+        toolCalls: new Map<string, { id: string; name: string; arguments: string }>(),
+        usage: undefined as { input_tokens?: number; output_tokens?: number; reasoning_tokens?: number } | undefined,
+    });
+
+    const applyCodexEventToState = (state: ReturnType<typeof createCodexEventState>, event: any) => {
+        if (event?.response?.id) {
+            state.id = event.response.id;
+        }
+
+        if (event?.response?.usage) {
+            state.usage = event.response.usage;
+        }
+
+        if (event?.type === 'response.output_text.delta' && typeof event.delta === 'string') {
+            state.text += event.delta;
+            return;
+        }
+
+        if (event?.type === 'response.output_text.done' && typeof event.text === 'string') {
+            state.text = event.text;
+            return;
+        }
+
+        if (event?.type === 'response.output_item.done') {
+            const item = event.item;
+
+            if (item?.type === 'message' && Array.isArray(item.content)) {
+                const itemText = item.content
+                    .filter((part: any) => part?.type === 'output_text' && typeof part.text === 'string')
+                    .map((part: any) => part.text)
+                    .join('');
+                if (itemText) {
+                    state.text = itemText;
+                }
+                return;
+            }
+
+            if (item?.type === 'function_call') {
+                const toolCallId = item.call_id || item.id || crypto.randomUUID();
+                state.toolCalls.set(toolCallId, {
+                    id: toolCallId,
+                    name: item.name || 'tool',
+                    arguments: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {}),
+                });
+            }
+        }
+    };
+
+    const toOpenAIUsage = (usage: { input_tokens?: number; output_tokens?: number; reasoning_tokens?: number } | undefined) => {
+        if (!usage) return undefined;
+        const promptTokens = usage.input_tokens ?? 0;
+        const completionTokens = usage.output_tokens ?? 0;
+        return {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
+        };
+    };
+
+    const buildOpenAICompletion = (payload: any, requestedModel: string) => {
+        const parsed = extractCodexResponsePayload(payload);
+        const message: Record<string, any> = {
+            role: 'assistant',
+            content: parsed.toolCalls.length > 0 && parsed.text.length === 0 ? null : parsed.text,
+        };
+
+        if (parsed.toolCalls.length > 0) {
+            message.tool_calls = parsed.toolCalls.map((toolCall) => ({
+                id: toolCall.id,
+                type: 'function',
+                function: {
+                    name: toolCall.name,
+                    arguments: toolCall.arguments,
+                },
+            }));
+        }
+
+        return {
+            id: parsed.id,
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: requestedModel,
+            choices: [
+                {
+                    index: 0,
+                    message,
+                    finish_reason: parsed.toolCalls.length > 0 ? 'tool_calls' : 'stop',
+                },
+            ],
+            usage: toOpenAIUsage(parsed.usage),
+        };
+    };
+
+    const buildOpenAICompletionFromState = (state: ReturnType<typeof createCodexEventState>, requestedModel: string) => {
+        const toolCalls = Array.from(state.toolCalls.values());
+        const message: Record<string, any> = {
+            role: 'assistant',
+            content: toolCalls.length > 0 && state.text.length === 0 ? null : state.text,
+        };
+
+        if (toolCalls.length > 0) {
+            message.tool_calls = toolCalls.map((toolCall) => ({
+                id: toolCall.id,
+                type: 'function',
+                function: {
+                    name: toolCall.name,
+                    arguments: toolCall.arguments,
+                },
+            }));
+        }
+
+        return {
+            id: state.id,
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: requestedModel,
+            choices: [
+                {
+                    index: 0,
+                    message,
+                    finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+                },
+            ],
+            usage: toOpenAIUsage(state.usage),
+        };
+    };
+
+    const convertCodexSseToOpenAIJson = async (response: Response, requestedModel: string): Promise<Response> => {
+        if (!response.body) {
+            throw new Error('Response has no body');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const state = createCodexEventState();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = line.substring(6).trim();
+                if (!data || data === '[DONE]') continue;
+
+                const event = JSON.parse(data);
+                if (event.type === 'error') {
+                    throw new Error(event.error?.message || 'Unknown Codex error');
+                }
+
+                applyCodexEventToState(state, event);
+            }
+        }
+
+        return new Response(JSON.stringify(buildOpenAICompletionFromState(state, requestedModel)), {
+            status: response.status,
+            statusText: response.statusText,
+            headers: {
+                'content-type': 'application/json; charset=utf-8',
+            },
+        });
+    };
+
+    const convertCodexSseToOpenAI = async (response: Response, requestedModel: string): Promise<Response> => {
+        if (!response.body) {
+            throw new Error('Response has no body');
+        }
+
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+        const reader = response.body.getReader();
+        const state = createCodexEventState();
+
+        let buffer = '';
+        let emittedRole = false;
+        const emittedToolCalls = new Set<string>();
+        let finished = false;
+
+        const emitFinalChunk = (controller: ReadableStreamDefaultController<Uint8Array>) => {
+            if (finished) return;
+            finished = true;
+
+            const chunkBase = {
+                id: state.id,
+                object: 'chat.completion.chunk',
+                created: Math.floor(Date.now() / 1000),
+                model: requestedModel,
+            };
+
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                ...chunkBase,
+                choices: [{
+                    index: 0,
+                    delta: {},
+                    finish_reason: state.toolCalls.size > 0 ? 'tool_calls' : 'stop',
+                }],
+                usage: toOpenAIUsage(state.usage),
+            })}\n\n`));
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+        };
+
+        const processEvent = (event: any, controller: ReadableStreamDefaultController<Uint8Array>) => {
+            if (event.type === 'error') {
+                throw new Error(event.error?.message || 'Unknown Codex error');
+            }
+
+            applyCodexEventToState(state, event);
+
+            const chunkBase = {
+                id: state.id,
+                object: 'chat.completion.chunk',
+                created: Math.floor(Date.now() / 1000),
+                model: requestedModel,
+            };
+
+            if (!emittedRole && (event.type === 'response.output_text.delta' || event.type === 'response.output_item.done')) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    ...chunkBase,
+                    choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+                })}\n\n`));
+                emittedRole = true;
+            }
+
+            if (event.type === 'response.output_text.delta' && typeof event.delta === 'string' && event.delta.length > 0) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                    ...chunkBase,
+                    choices: [{ index: 0, delta: { content: event.delta }, finish_reason: null }],
+                })}\n\n`));
+            }
+
+            if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
+                const toolCallId = event.item.call_id || event.item.id || crypto.randomUUID();
+                if (!emittedToolCalls.has(toolCallId)) {
+                    emittedToolCalls.add(toolCallId);
+                    const toolCalls = Array.from(state.toolCalls.values());
+                    const index = toolCalls.findIndex((toolCall) => toolCall.id === toolCallId);
+                    const toolCall = state.toolCalls.get(toolCallId);
+                    if (toolCall) {
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                            ...chunkBase,
+                            choices: [{
+                                index: 0,
+                                delta: {
+                                    tool_calls: [{
+                                        index: index >= 0 ? index : 0,
+                                        id: toolCall.id,
+                                        type: 'function',
+                                        function: {
+                                            name: toolCall.name,
+                                            arguments: toolCall.arguments,
+                                        },
+                                    }],
+                                },
+                                finish_reason: null,
+                            }],
+                        })}\n\n`));
+                    }
+                }
+            }
+
+            if (event.type === 'response.completed' || event.type === 'response.done') {
+                emitFinalChunk(controller);
+            }
+        };
+
+        const processBuffer = (chunk: string, controller: ReadableStreamDefaultController<Uint8Array>, flush = false) => {
+            buffer += chunk;
+            const lines = buffer.split('\n');
+            buffer = flush ? '' : (lines.pop() || '');
+            const completeLines = flush ? lines.filter((line) => line.length > 0) : lines;
+
+            for (const line of completeLines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = line.substring(6).trim();
+                if (!data || data === '[DONE]') continue;
+                processEvent(JSON.parse(data), controller);
+                if (finished) return;
+            }
+        };
+
+        const stream = new ReadableStream<Uint8Array>({
+            async start(controller) {
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        processBuffer(decoder.decode(value, { stream: true }), controller);
+                        if (finished) return;
+                    }
+
+                    processBuffer(decoder.decode(), controller, true);
+
+                    if (!finished) {
+                        emitFinalChunk(controller);
+                    }
+                } catch (error) {
+                    controller.error(error);
+                }
+            },
+            cancel() {
+                reader.cancel();
+            },
+        });
+
+        return new Response(stream, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: {
+                'content-type': 'text/event-stream; charset=utf-8',
+                'cache-control': 'no-cache',
+                connection: 'keep-alive',
+            },
+        });
+    };
+
+    const transformChatCompletionsRequest = async (parsed: any): Promise<{
+        body: string;
+        isStreaming: boolean;
+        normalizedModel: string;
+    }> => {
+        const originalModel = parsed.model || '';
+        const normalizedModel = getBaseModelId(originalModel);
+        const reasoningEffort = getReasoningEffort(originalModel);
+        const isStreaming = parsed.stream === true;
+        const codexInstructions = await getCodexInstructions(normalizedModel);
+        const hasReasoning = reasoningEffort !== 'none';
+
+        const transformedBody: Record<string, any> = {
+            model: normalizedModel,
+            store: false,
+            stream: true,
+            input: toCodexInputFromChatMessages(parsed.messages),
+            include: hasReasoning ? ['reasoning.encrypted_content'] : [],
+            tool_choice: parsed.tool_choice ?? 'auto',
+            parallel_tool_calls: parsed.parallel_tool_calls ?? true,
+            text: { verbosity: 'medium' },
+        };
+
+        const tools = toCodexFunctionTools(parsed.tools);
+        if (tools) {
+            transformedBody.tools = tools;
+        }
+
+        transformedBody.instructions = codexInstructions || DEFAULT_CODEX_INSTRUCTIONS;
+
+        if (hasReasoning) {
+            transformedBody.reasoning = {
+                effort: reasoningEffort,
+                summary: 'auto',
+            };
+        }
+
+        return {
+            body: JSON.stringify(transformedBody),
+            isStreaming,
+            normalizedModel,
+        };
+    };
+
     /**
      * Creates a custom fetch function that:
      * 1. Refreshes OAuth token if needed
@@ -272,15 +822,50 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             }
 
             // Step 3: Rewrite URL for Codex backend: /responses -> /codex/responses
-            const codexUrl = url.replace(URL_PATHS.RESPONSES, URL_PATHS.CODEX_RESPONSES);
+            const isChatCompletionsRequest = /\/chat\/completions(?:\?|$)/.test(url);
+            const isModelsRequest = /\/models(?:\?|$)/.test(url);
+            const codexUrl = isChatCompletionsRequest
+                ? `${CODEX_BASE_URL}${URL_PATHS.CODEX_RESPONSES}`
+                : url.replace(URL_PATHS.RESPONSES, URL_PATHS.CODEX_RESPONSES);
             logger.debug(`Rewriting URL: ${url} -> ${codexUrl}`);
+
+            if (isModelsRequest && (!init?.method || init.method === 'GET')) {
+                return new Response(JSON.stringify({
+                    object: 'list',
+                    data: getActiveModels().map((model) => ({
+                        id: model.id,
+                        object: 'model',
+                        created: Math.floor(Date.now() / 1000),
+                        owned_by: 'openai-codex-auth',
+                    })),
+                }), {
+                    status: 200,
+                    headers: {
+                        'content-type': 'application/json; charset=utf-8',
+                    },
+                });
+            }
 
             // Step 4: Transform request body (matching opencode-openai-codex-auth exactly)
             let body = init?.body;
             let isStreaming = true; // Default to streaming
             let promptCacheKey: string | undefined; // For prompt caching headers
+            let requestedModel = '';
 
-            if (body && typeof body === 'string') {
+            if (isChatCompletionsRequest && body && typeof body === 'string') {
+                try {
+                    const parsed = JSON.parse(body);
+                    requestedModel = parsed.model || '';
+                    const transformed = await transformChatCompletionsRequest(parsed);
+                    body = transformed.body;
+                    isStreaming = transformed.isStreaming;
+                    logger.debug(`Translated chat/completions request: model=${requestedModel || transformed.normalizedModel}, streaming=${isStreaming}`);
+                } catch (e) {
+                    logger.error('Error transforming chat completion request body:', e);
+                }
+            }
+
+            if (!isChatCompletionsRequest && body && typeof body === 'string') {
                 try {
                     const parsed = JSON.parse(body);
 
@@ -399,9 +984,7 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                     };
 
                     // Set Codex instructions (matching opencode's body.instructions = codexInstructions)
-                    if (codexInstructions) {
-                        transformedBody.instructions = codexInstructions;
-                    }
+                    transformedBody.instructions = codexInstructions || DEFAULT_CODEX_INSTRUCTIONS;
 
                     // Add reasoning config if enabled
                     if (reasoning) {
@@ -490,7 +1073,14 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             }
 
             if (!isStreaming) {
+                if (isChatCompletionsRequest) {
+                    return await convertCodexSseToOpenAIJson(response, requestedModel || 'unknown');
+                }
                 return await convertSseToJson(response, responseHeaders);
+            }
+
+            if (isChatCompletionsRequest) {
+                return await convertCodexSseToOpenAI(response, requestedModel || 'unknown');
             }
 
             // Return streaming response as-is
@@ -511,6 +1101,7 @@ export async function activate(context: PluginContext): Promise<PluginActivation
         name: 'OpenAI Codex (ChatGPT)',
         description: 'Access GPT-5.3 Codex and other models via your ChatGPT subscription',
         authType: 'oauth',
+        sdkType: 'openai-compatible',
 
         async initialize() {
             logger.info('Codex provider initialized');
@@ -663,7 +1254,6 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 apiKey: DUMMY_API_KEY,
                 baseURL: CODEX_BASE_URL,
                 fetch: createCodexFetch(),
-                useResponsesAPI: true,
             };
         },
     });
