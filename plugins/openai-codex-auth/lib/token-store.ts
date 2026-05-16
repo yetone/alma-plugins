@@ -311,6 +311,29 @@ export class TokenStore {
         }
     }
 
+    /**
+     * Force-refresh an access token even when the cached expiry timestamp says
+     * it is still valid. ChatGPT can invalidate OAuth tokens before expiry.
+     */
+    async forceRefreshAccessToken(accountId = this.activeAccountId): Promise<string> {
+        if (!accountId) {
+            throw new Error('Not authenticated. Please login first.');
+        }
+
+        let pending = this.refreshPromises.get(accountId);
+        if (!pending) {
+            pending = this.doRefresh(accountId);
+            this.refreshPromises.set(accountId, pending);
+        }
+
+        try {
+            const tokens = await pending;
+            return tokens.access_token;
+        } finally {
+            this.refreshPromises.delete(accountId);
+        }
+    }
+
     private async doRefresh(accountId: string): Promise<CodexTokens> {
         const record = this.accounts.get(accountId);
         if (!record?.tokens.refresh_token) {
