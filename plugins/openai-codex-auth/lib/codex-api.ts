@@ -18,6 +18,10 @@ import { getBaseModelId, getReasoningEffort } from './models';
 // ============================================================================
 
 const CODEX_API_URL = 'https://chatgpt.com/backend-api/codex/responses';
+const FALLBACK_CODEX_INSTRUCTIONS = [
+    'You are ChatGPT, running as a coding agent in Alma.',
+    'Be concise, follow the user request, and use available tools when needed.',
+].join('\n');
 
 // ============================================================================
 // Request Types (from Alma's ProviderChatRequest)
@@ -115,6 +119,7 @@ export class CodexClient {
             model: baseModel,
             store: false, // Required: stateless mode
             stream: true, // Always stream for now
+            instructions: FALLBACK_CODEX_INSTRUCTIONS,
             input,
             include: ['reasoning.encrypted_content'], // Preserve reasoning context
         };
@@ -219,6 +224,10 @@ export class CodexClient {
 
                         try {
                             const event = JSON.parse(data);
+                            if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
+                                controller.enqueue(encoder.encode(event.delta));
+                                continue;
+                            }
                             const fullText = extractTextFromEvent(event);
 
                             // Only send the delta (new portion of text)

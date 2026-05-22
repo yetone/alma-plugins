@@ -49,7 +49,13 @@ const URL_PATHS = {
 const HTTP_STATUS = {
     NOT_FOUND: 404,
     TOO_MANY_REQUESTS: 429,
+    UNAUTHORIZED: 401,
 } as const;
+
+const FALLBACK_CODEX_INSTRUCTIONS = [
+    'You are ChatGPT, running as a coding agent in Alma.',
+    'Be concise, follow the user request, and use available tools when needed.',
+].join('\n');
 
 // ============================================================================
 // Plugin Activation
@@ -88,17 +94,64 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             fullText += decoder.decode(value, { stream: true });
         }
 
-        // Parse SSE events to extract the final response
+        // Parse SSE events to extract the final response and rebuild output
+        // because the final response.completed payload can carry output: [].
         const lines = fullText.split('\n');
-        let finalResponse: unknown = null;
+        let finalResponse: any = null;
+        const outputByIndex = new Map<number, any>();
+
+        const ensureMessageItem = (outputIndex: number, itemId?: string) => {
+            let item = outputByIndex.get(outputIndex);
+            if (!item) {
+                item = {
+                    id: itemId,
+                    type: 'message',
+                    status: 'completed',
+                    role: 'assistant',
+                    content: [{ type: 'output_text', text: '' }],
+                };
+                outputByIndex.set(outputIndex, item);
+            }
+            if (!Array.isArray(item.content)) item.content = [{ type: 'output_text', text: '' }];
+            if (!item.content[0]) item.content[0] = { type: 'output_text', text: '' };
+            return item;
+        };
 
         for (const line of lines) {
             if (line.startsWith('data: ')) {
                 try {
                     const data = JSON.parse(line.substring(6));
+                    if (typeof data.output_index === 'number') {
+                        if (data.type === 'response.output_item.added' && data.item) {
+                            outputByIndex.set(data.output_index, data.item);
+                        }
+                        if (data.type === 'response.output_item.done' && data.item) {
+                            outputByIndex.set(data.output_index, data.item);
+                        }
+                        if (data.type === 'response.output_text.delta') {
+                            const item = ensureMessageItem(data.output_index, data.item_id);
+                            const contentIndex = data.content_index ?? 0;
+                            if (!item.content[contentIndex]) item.content[contentIndex] = { type: 'output_text', text: '' };
+                            item.content[contentIndex].text = `${item.content[contentIndex].text ?? ''}${data.delta ?? ''}`;
+                        }
+                        if (data.type === 'response.output_text.done') {
+                            const item = ensureMessageItem(data.output_index, data.item_id);
+                            const contentIndex = data.content_index ?? 0;
+                            item.content[contentIndex] = {
+                                type: 'output_text',
+                                annotations: data.annotations ?? [],
+                                logprobs: data.logprobs ?? [],
+                                text: data.text ?? item.content[contentIndex]?.text ?? '',
+                            };
+                        }
+                        if (data.type === 'response.content_part.done' && data.part?.type === 'output_text') {
+                            const item = ensureMessageItem(data.output_index, data.item_id);
+                            const contentIndex = data.content_index ?? 0;
+                            item.content[contentIndex] = data.part;
+                        }
+                    }
                     if (data.type === 'response.done' || data.type === 'response.completed') {
                         finalResponse = data.response;
-                        break;
                     }
                 } catch {
                     // Skip malformed JSON
@@ -113,6 +166,12 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 statusText: response.statusText,
                 headers,
             });
+        }
+
+        if ((!Array.isArray(finalResponse.output) || finalResponse.output.length === 0) && outputByIndex.size > 0) {
+            finalResponse.output = Array.from(outputByIndex.entries())
+                .sort(([a], [b]) => a - b)
+                .map(([, item]) => item);
         }
 
         // Return as plain JSON
@@ -162,6 +221,23 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             statusText: 'Too Many Requests',
             headers,
         });
+    };
+
+    const getCodexInstructionsForRequest = async (model: string): Promise<string> => {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+            return await Promise.race([
+                getCodexInstructions(model),
+                new Promise<string>(resolve => {
+                    timeout = setTimeout(() => resolve(''), 1500);
+                }),
+            ]);
+        } catch (error) {
+            logger.warn(`Codex instructions fetch failed for ${model}:`, error);
+            return '';
+        } finally {
+            if (timeout) clearTimeout(timeout);
+        }
     };
 
     /**
@@ -376,7 +452,8 @@ export async function activate(context: PluginContext): Promise<PluginActivation
 
                     // Fetch Codex instructions from GitHub (matching opencode)
                     // These are cached with ETag for 15 minutes
-                    const codexInstructions = await getCodexInstructions(normalizedModel);
+                    const codexInstructions = await getCodexInstructionsForRequest(normalizedModel);
+                    const instructions = codexInstructions?.trim() || FALLBACK_CODEX_INSTRUCTIONS;
 
                     // Build reasoning config (matching official Codex CLI's build_responses_request)
                     const hasReasoning = reasoningEffort !== 'none';
@@ -400,10 +477,8 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                         parallel_tool_calls: parsed.parallel_tool_calls ?? true, // Preserve from AI SDK or default true
                     };
 
-                    // Set Codex instructions (matching opencode's body.instructions = codexInstructions)
-                    if (codexInstructions) {
-                        transformedBody.instructions = codexInstructions;
-                    }
+                    // Codex backend requires non-empty instructions.
+                    transformedBody.instructions = instructions;
 
                     // Add reasoning config if enabled
                     if (reasoning) {
@@ -459,11 +534,29 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             }
 
             // Step 6: Make the request
-            const response = await globalThis.fetch(codexUrl, {
+            let response = await globalThis.fetch(codexUrl, {
                 ...init,
                 body,
                 headers,
             });
+
+            if (response.status === HTTP_STATUS.UNAUTHORIZED) {
+                const authErrorText = await response.clone().text().catch(() => '');
+                if (/token_invalidated|expired|unauthorized/i.test(authErrorText)) {
+                    try {
+                        logger.warn('Codex access token was rejected; refreshing and retrying once');
+                        const refreshedToken = await tokenStore.forceRefreshAccessToken(accountId);
+                        headers.set('Authorization', `Bearer ${refreshedToken}`);
+                        response = await globalThis.fetch(codexUrl, {
+                            ...init,
+                            body,
+                            headers,
+                        });
+                    } catch (error) {
+                        logger.error('Codex token refresh after 401 failed:', error);
+                    }
+                }
+            }
 
             // Step 7: Handle error response (matching opencode's handleErrorResponse)
             if (!response.ok) {
@@ -688,14 +781,14 @@ export async function activate(context: PluginContext): Promise<PluginActivation
         async fetchModels() {
             logger.info('Fetching available models from Codex API...');
             try {
-                const accessToken = await tokenStore.getValidAccessToken();
+                let accessToken = await tokenStore.getValidAccessToken();
                 const accountId = tokenStore.getAccountId();
                 if (!accountId) {
                     logger.warn('No account ID, returning default models');
                     return this.getModels();
                 }
 
-                const response = await globalThis.fetch(
+                const fetchModelList = () => globalThis.fetch(
                     `${CODEX_BASE_URL}/codex/models?client_version=1.0.0`,
                     {
                         headers: {
@@ -706,6 +799,21 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                         },
                     },
                 );
+
+                let response = await fetchModelList();
+
+                if (response.status === HTTP_STATUS.UNAUTHORIZED) {
+                    const authErrorText = await response.clone().text().catch(() => '');
+                    if (/token_invalidated|expired|unauthorized/i.test(authErrorText)) {
+                        try {
+                            logger.warn('Codex model fetch token was rejected; refreshing and retrying once');
+                            accessToken = await tokenStore.forceRefreshAccessToken(accountId);
+                            response = await fetchModelList();
+                        } catch (error) {
+                            logger.error('Codex token refresh before model fetch failed:', error);
+                        }
+                    }
+                }
 
                 if (!response.ok) {
                     logger.warn(`Failed to fetch models: ${response.status}`);

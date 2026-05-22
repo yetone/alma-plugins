@@ -94,6 +94,43 @@ export function buildModelsFromApiResponse(data: any): CodexModelInfo[] {
 
 export const CODEX_MODELS: CodexModelInfo[] = [
     // -------------------------------------------------------------------------
+    // GPT-5.5 (current frontier model - supports low/medium/high/xhigh)
+    // -------------------------------------------------------------------------
+    {
+        id: 'gpt-5.5',
+        name: 'GPT-5.5',
+        description: 'GPT-5.5 - frontier model for complex coding and research',
+        baseModel: 'gpt-5.5',
+        reasoning: 'medium',
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+    },
+    {
+        id: 'gpt-5.5-low',
+        name: 'GPT-5.5 (Low Reasoning)',
+        baseModel: 'gpt-5.5',
+        reasoning: 'low',
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+    },
+    {
+        id: 'gpt-5.5-high',
+        name: 'GPT-5.5 (High Reasoning)',
+        baseModel: 'gpt-5.5',
+        reasoning: 'high',
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+    },
+    {
+        id: 'gpt-5.5-xhigh',
+        name: 'GPT-5.5 (XHigh Reasoning)',
+        baseModel: 'gpt-5.5',
+        reasoning: 'xhigh',
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+    },
+
+    // -------------------------------------------------------------------------
     // GPT-5.4 (flagship frontier model - supports none/low/medium/high/xhigh)
     // -------------------------------------------------------------------------
     {
@@ -135,6 +172,43 @@ export const CODEX_MODELS: CodexModelInfo[] = [
         baseModel: 'gpt-5.4',
         reasoning: 'xhigh',
         contextWindow: 1050000,
+        maxOutputTokens: 128000,
+    },
+
+    // -------------------------------------------------------------------------
+    // GPT-5.4 Mini (fast/cost-efficient model - supports low/medium/high/xhigh)
+    // -------------------------------------------------------------------------
+    {
+        id: 'gpt-5.4-mini',
+        name: 'GPT-5.4 Mini',
+        description: 'GPT-5.4 Mini - fast and cost-efficient model',
+        baseModel: 'gpt-5.4-mini',
+        reasoning: 'medium',
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+    },
+    {
+        id: 'gpt-5.4-mini-low',
+        name: 'GPT-5.4 Mini (Low Reasoning)',
+        baseModel: 'gpt-5.4-mini',
+        reasoning: 'low',
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+    },
+    {
+        id: 'gpt-5.4-mini-high',
+        name: 'GPT-5.4 Mini (High Reasoning)',
+        baseModel: 'gpt-5.4-mini',
+        reasoning: 'high',
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+    },
+    {
+        id: 'gpt-5.4-mini-xhigh',
+        name: 'GPT-5.4 Mini (XHigh Reasoning)',
+        baseModel: 'gpt-5.4-mini',
+        reasoning: 'xhigh',
+        contextWindow: 400000,
         maxOutputTokens: 128000,
     },
 
@@ -559,7 +633,16 @@ export const CODEX_MODELS: CodexModelInfo[] = [
  * Get model info by ID (searches active model list)
  */
 export function getModelInfo(modelId: string): CodexModelInfo | undefined {
-    return getActiveModels().find(m => m.id === modelId);
+    const normalizedId = normalizeModelId(modelId);
+    return getActiveModels().find(m => m.id === normalizedId);
+}
+
+/**
+ * Alma can pass fully-qualified IDs such as
+ * openai-codex-auth:openai-codex:gpt-5.5. Codex only accepts the slug.
+ */
+export function normalizeModelId(modelId: string): string {
+    return modelId.includes(':') ? modelId.split(':').pop() || modelId : modelId;
 }
 
 /**
@@ -568,7 +651,7 @@ export function getModelInfo(modelId: string): CodexModelInfo | undefined {
  */
 export function getBaseModelId(modelId: string): string {
     const model = getModelInfo(modelId);
-    return model?.baseModel ?? modelId;
+    return model?.baseModel ?? normalizeModelId(modelId);
 }
 
 /**
