@@ -1,0 +1,55 @@
+{
+    "id": "qwen-auth",
+    "name": "Qwen Auth",
+    "version": "1.0.1",
+    "description": "Use Alibaba Qwen AI models with Alma via OAuth Device Flow. Access Qwen models directly from your Qwen account.",
+    "author": {
+        "name": "laomeifun"
+    },
+    "main": "main.js",
+    "engines": {
+        "alma": "^0.1.0"
+    },
+    "type": "provider",
+    "permissions": [
+        "network:fetch",
+        "network:domain:chat.qwen.ai",
+        "network:domain:portal.qwen.ai",
+        "network:domain:dashscope.aliyuncs.com",
+        "providers:manage",
+        "notifications"
+    ],
+    "activationEvents": [
+        "onStartup"
+    ],
+    "contributes": {
+        "providers": [
+            {
+                "id": "qwen",
+                "name": "Qwen (Alibaba)",
+                "authType": "oauth"
+            }
+        ],
+        "commands": [
+            {
+                "id": "qwen-auth.login",
+                "title": "Login to Qwen (Alibaba)"
+            },
+            {
+                "id": "qwen-auth.logout",
+                "title": "Logout from Qwen"
+            },
+            {
+                "id": "qwen-auth.status",
+                "title": "Show Qwen Account Status"
+            }
+        ]
+    },
+    "keywords": [
+        "qwen",
+        "alibaba",
+        "oauth",
+        "ai",
+        "llm"
+    ]
+}
