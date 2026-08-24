@@ -251,6 +251,7 @@ export async function activate(context: PluginContext): Promise<PluginActivation
 
     const providerDisposable = providers.register({
         id: 'xai-grok',
+        icon: 'Grok',
         name: 'xAI Grok (SuperGrok)',
         description: 'Access Grok models via your SuperGrok subscription',
         authType: 'oauth',
