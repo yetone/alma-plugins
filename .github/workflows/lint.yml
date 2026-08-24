@@ -1,0 +1,57 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugins/**"
+      - "registry.json"
+      - "scripts/lint-versions.mjs"
+      - ".github/workflows/lint.yml"
+  pull_request:
+    paths:
+      - "plugins/**"
+      - "registry.json"
+      - "scripts/lint-versions.mjs"
+      - ".github/workflows/lint.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: lint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  versions:
+    name: Plugin version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check manifest / package.json / registry.json versions
+        run: node scripts/lint-versions.mjs
+
+      - name: Explain failure
+        if: failure()
+        run: |
+          {
+            echo "### Plugin version mismatch"
+            echo
+            echo "Alma decides whether an update exists by comparing the **installed**"
+            echo '`manifest.json` version against the version in `registry.json`.'
+            echo "When they disagree, every user is prompted to update, reinstalls the"
+            echo "same package, and is prompted again — forever."
+            echo
+            echo "Fix it locally with:"
+            echo
+            echo '```bash'
+            echo "node scripts/lint-versions.mjs        # see what is wrong"
+            echo "node scripts/lint-versions.mjs --fix  # sync registry.json from the manifests"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
