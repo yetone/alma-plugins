@@ -1,0 +1,58 @@
+{
+  "id": "devin-auth",
+  "name": "Devin (Cascade)",
+  "version": "1.0.0",
+  "description": "Use your Devin subscription in Alma via OAuth. Talks to the Codeium Cascade API directly over Connect/protobuf — no CLI, no sidecar process. Includes SWE-2 Max.",
+  "author": {
+    "name": "Alma Community"
+  },
+  "main": "main.ts",
+  "engines": {
+    "alma": "^0.1.0"
+  },
+  "type": "provider",
+  "permissions": [
+    "network:fetch",
+    "network:domain:codeium.com",
+    "network:domain:devin.ai",
+    "network:domain:app.devin.ai",
+    "providers:manage",
+    "notifications",
+    "storage:secrets"
+  ],
+  "activationEvents": [
+    "onStartup"
+  ],
+  "contributes": {
+    "providers": [
+      {
+        "id": "devin",
+        "name": "Devin",
+        "authType": "oauth"
+      }
+    ],
+    "commands": [
+      {
+        "id": "devin-auth.login",
+        "title": "Login to Devin"
+      },
+      {
+        "id": "devin-auth.logout",
+        "title": "Logout from Devin"
+      },
+      {
+        "id": "devin-auth.status",
+        "title": "Devin Connection Status"
+      }
+    ]
+  },
+  "keywords": [
+    "devin",
+    "codeium",
+    "windsurf",
+    "cascade",
+    "oauth",
+    "swe-2",
+    "swe-2-max"
+  ]
+}

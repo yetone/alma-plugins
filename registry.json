@@ -1,7 +1,7 @@
 {
     "$schema": "./registry.schema.json",
     "version": "1.0.0",
-    "lastUpdated": "2026-07-14T20:07:08Z",
+    "lastUpdated": "2026-09-12T17:05:53Z",
     "plugins": [
         {
             "id": "hello-world",
@@ -136,6 +136,22 @@
             "downloads": 0,
             "rating": 0,
             "featured": true
+        },
+        {
+            "id": "devin-auth",
+            "name": "Devin Auth",
+            "version": "1.0.0",
+            "description": "Use your Devin subscription in Alma via OAuth. Talk to SWE-2 Max, Claude, GPT, Gemini, GLM and Kimi by speaking Codeium's Cascade API directly - no CLI, no sidecar bridge. Streaming, reasoning and native tool calling included.",
+            "author": {
+                "name": "Alma Community"
+            },
+            "type": ["provider"],
+            "tags": ["devin", "codeium", "windsurf", "cascade", "oauth", "swe-2", "provider"],
+            "repository": "https://github.com/yetone/alma-plugins",
+            "path": "plugins/devin-auth",
+            "downloads": 0,
+            "rating": 0,
+            "featured": false
         },
         {
             "id": "nowledge-mem",
