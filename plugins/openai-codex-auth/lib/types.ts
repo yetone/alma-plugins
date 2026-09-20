@@ -30,6 +30,13 @@ export interface CodexAccountRecord {
     picture?: string;
     plan?: string;
     quota?: CodexAccountQuota;
+    /**
+     * Until when (ms since epoch) this account is known to be out of quota:
+     * set when the backend answers a request with usage_limit_reached, from
+     * its `resets_in_seconds`. Requests prefer another account while it is
+     * in the future; cleared by the next successful request on it.
+     */
+    limitedUntil?: number;
 }
 
 /** Per-limit quota info returned to the host via ProviderAccountInfo.quota. */

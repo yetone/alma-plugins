@@ -203,10 +203,91 @@ export class TokenStore {
         if (!record) return;
         if (quota) {
             record.quota = quota;
+            // The usage endpoint is the authority: when it says the account is
+            // not limited (and nothing is at 0%), a local mark from an earlier
+            // 429 is stale — drop it so the account is eligible again.
+            if (record.limitedUntil && !quota.rateLimitReached && !quota.models.some(m => m.percentage <= 0)) {
+                delete record.limitedUntil;
+            }
         } else {
             delete record.quota;
         }
         await this.persistAccounts();
+    }
+
+    // =========================================================================
+    // Usage-limit bookkeeping (multi-account rotation)
+    // =========================================================================
+
+    /** Remember that `accountId` is out of quota until `until` (ms epoch). */
+    async markAccountLimited(accountId: string, until: number): Promise<void> {
+        const record = this.accounts.get(accountId);
+        if (!record) return;
+        record.limitedUntil = until;
+        await this.persistAccounts();
+        this.logger.info(`Codex account ${accountId} marked out of quota until ${new Date(until).toISOString()}`);
+    }
+
+    /** A request on `accountId` went through: it evidently has quota again. */
+    async clearAccountLimited(accountId: string): Promise<void> {
+        const record = this.accounts.get(accountId);
+        if (!record?.limitedUntil) return;
+        delete record.limitedUntil;
+        await this.persistAccounts();
+    }
+
+    /**
+     * True when the account is believed to have no quota right now: a 429 mark
+     * that has not expired, or a cached usage snapshot with the limit reached
+     * whose reset is still ahead.
+     */
+    isAccountLimited(accountId: string, now = Date.now()): boolean {
+        const record = this.accounts.get(accountId);
+        if (!record) return false;
+        if (record.limitedUntil && record.limitedUntil > now) return true;
+        const quota = record.quota;
+        if (quota?.rateLimitReached) {
+            const resets = quota.models.map(m => Date.parse(m.resetTime)).filter(t => Number.isFinite(t));
+            // No usable reset time: trust the flag only while the snapshot is fresh.
+            if (resets.length === 0) return now - quota.lastUpdated < 10 * 60 * 1000;
+            return Math.min(...resets) > now;
+        }
+        return false;
+    }
+
+    /**
+     * The next account with quota, in round-robin order after the active one,
+     * skipping `exclude` (accounts already tried in this request). Null when
+     * every other account is limited too.
+     */
+    pickAvailableAccount(exclude: Iterable<string> = [], now = Date.now()): CodexAccountRecord | null {
+        const skip = new Set(exclude);
+        const ids = Array.from(this.accounts.keys());
+        if (ids.length === 0) return null;
+        const start = this.activeAccountId ? ids.indexOf(this.activeAccountId) : -1;
+        for (let step = 1; step <= ids.length; step++) {
+            const id = ids[(start + step) % ids.length];
+            if (skip.has(id) || id === this.activeAccountId) continue;
+            if (!this.accounts.get(id)?.tokens?.refresh_token) continue;
+            if (this.isAccountLimited(id, now)) continue;
+            return this.accounts.get(id) ?? null;
+        }
+        return null;
+    }
+
+    /** Earliest moment any account is expected to have quota again, if known. */
+    earliestLimitReset(now = Date.now()): number | null {
+        let earliest: number | null = null;
+        for (const record of this.accounts.values()) {
+            const candidates: number[] = [];
+            if (record.limitedUntil && record.limitedUntil > now) candidates.push(record.limitedUntil);
+            for (const m of record.quota?.models ?? []) {
+                const t = Date.parse(m.resetTime);
+                if (Number.isFinite(t) && t > now && m.percentage <= 0) candidates.push(t);
+            }
+            for (const t of candidates) if (earliest === null || t < earliest) earliest = t;
+        }
+        return earliest;
     }
 
     /**

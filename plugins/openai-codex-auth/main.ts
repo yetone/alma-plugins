@@ -206,6 +206,54 @@ export async function activate(context: PluginContext): Promise<PluginActivation
     };
 
     /**
+     * Is this error response the account running out of quota (rather than a
+     * malformed request or an outage)? Codex answers such requests with a
+     * 429, or a 404 carrying usage_limit_reached — and tells when the window
+     * resets (`resets_in_seconds` / `resets_at`), which we use to park the
+     * account until then. A bare 429 with no usage-limit code is a per-account
+     * rate limit; another account escapes it too, so it is parked briefly.
+     */
+    const inspectUsageLimit = async (response: Response): Promise<{ limited: boolean; resetAt: number; message: string }> => {
+        const none = { limited: false, resetAt: 0, message: '' };
+        if (response.status !== HTTP_STATUS.TOO_MANY_REQUESTS && response.status !== HTTP_STATUS.NOT_FOUND) return none;
+        let text = '';
+        try {
+            text = await response.clone().text();
+        } catch {
+            text = '';
+        }
+        let err: any = null;
+        try {
+            err = JSON.parse(text)?.error ?? null;
+        } catch {
+            err = null;
+        }
+        const code = `${err?.code ?? ''} ${err?.type ?? ''} ${text}`.toLowerCase();
+        const isUsageLimit = /usage_limit_reached|usage_not_included|rate_limit_exceeded|usage limit/i.test(code);
+        if (response.status === HTTP_STATUS.NOT_FOUND && !isUsageLimit) return none;
+
+        const now = Date.now();
+        let resetAt = 0;
+        if (typeof err?.resets_in_seconds === 'number' && err.resets_in_seconds > 0) {
+            resetAt = now + err.resets_in_seconds * 1000;
+        } else if (typeof err?.resets_at === 'number' && err.resets_at > 0) {
+            resetAt = err.resets_at * (err.resets_at < 1e12 ? 1000 : 1);
+        } else {
+            const retryAfter = Number(response.headers.get('retry-after') || 0);
+            if (retryAfter > 0) resetAt = now + retryAfter * 1000;
+        }
+        // Unknown reset: a quota window is hours; a plain rate limit, a minute.
+        if (!resetAt) resetAt = now + (isUsageLimit ? 30 * 60 * 1000 : 60 * 1000);
+        return { limited: true, resetAt, message: typeof err?.message === 'string' ? err.message : '' };
+    };
+
+    /** How an account shows up in logs and notifications. */
+    const accountLabel = (accountId: string): string => {
+        const record = tokenStore.getAccount(accountId);
+        return record?.email || `${accountId.slice(0, 8)}…`;
+    };
+
+    /**
      * Handle orphaned tool outputs by converting them to messages (matching opencode)
      * This prevents infinite loops when function_call was an item_reference that got filtered
      */
@@ -296,13 +344,27 @@ export async function activate(context: PluginContext): Promise<PluginActivation
      */
     const createCodexFetch = (): typeof globalThis.fetch => {
         return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-            // Step 1: Get fresh access token
-            const accessToken = await tokenStore.getValidAccessToken();
-            const accountId = tokenStore.getAccountId();
-
+            // Step 1: Pick the account and get a fresh access token. The active
+            // account stays active as long as it has quota; once a request hit
+            // its usage limit (or the usage endpoint says so), the next request
+            // moves to another connected account instead of failing the same
+            // way until the user notices (Margma: with two accounts, the second
+            // was never used after the first ran dry).
+            let accountId = tokenStore.getAccountId();
             if (!accountId) {
+                // Preserve the original error text for callers that match on it.
+                await tokenStore.getValidAccessToken();
                 throw new Error('Account ID not found. Please re-authenticate.');
             }
+            if (tokenStore.isAccountLimited(accountId)) {
+                const alternative = tokenStore.pickAvailableAccount([accountId]);
+                if (alternative) {
+                    logger.info(`Codex account ${accountLabel(accountId)} is out of quota; using ${accountLabel(alternative.id)} instead`);
+                    await tokenStore.setActiveAccount(alternative.id);
+                    accountId = alternative.id;
+                }
+            }
+            let accessToken = await tokenStore.getValidAccessTokenFor(accountId);
 
             // Step 2: Extract URL string
             let url: string;
@@ -651,13 +713,68 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 }
             }
 
+            // Step 6.6: Out of quota on this account → park it until its window
+            // resets and retry the same request on the next account that still
+            // has quota. Streaming or not, nothing has been consumed yet: the
+            // error arrives before any body, and `body` is our own string.
+            let limit = response.ok ? null : await inspectUsageLimit(response);
+            if (limit?.limited) {
+                const tried = new Set<string>();
+                while (limit?.limited) {
+                    await tokenStore.markAccountLimited(accountId, limit.resetAt);
+                    void refreshQuotaForAccount(accountId);
+                    tried.add(accountId);
+                    const next = tokenStore.pickAvailableAccount(tried);
+                    if (!next) break;
+                    logger.warn(
+                        `Codex account ${accountLabel(accountId)} hit its usage limit (${limit.message || response.status}); switching to ${accountLabel(next.id)}`
+                    );
+                    ui.showNotification(`ChatGPT account ${accountLabel(accountId)} is out of quota — switched to ${accountLabel(next.id)}`, {
+                        type: 'info',
+                    });
+                    await tokenStore.setActiveAccount(next.id);
+                    accountId = next.id;
+                    accessToken = await tokenStore.getValidAccessTokenFor(accountId);
+                    headers.set('Authorization', `Bearer ${accessToken}`);
+                    headers.set(OPENAI_HEADERS.ACCOUNT_ID, accountId);
+                    response = await globalThis.fetch(codexUrl, { ...init, body, headers });
+                    limit = response.ok ? null : await inspectUsageLimit(response);
+                }
+            }
+            if (response.ok) {
+                void tokenStore.clearAccountLimited(accountId);
+            }
+
             // Step 7: Handle error response (matching opencode's handleErrorResponse)
             if (!response.ok) {
                 // Map 404 usage limit errors to 429 for proper rate limit handling
                 const mappedResponse = await mapUsageLimit404(response);
-                if (mappedResponse) {
-                    logger.warn('Usage limit reached, returning 429 status');
-                    return mappedResponse;
+                if (mappedResponse || limit?.limited) {
+                    const accounts = tokenStore.listAccounts();
+                    logger.warn(`Usage limit reached on ${accounts.length} account(s), returning 429 status`);
+                    // With several accounts all dry, say so — "no quota" alone
+                    // reads as the other accounts never being tried.
+                    if (accounts.length > 1) {
+                        const reset = tokenStore.earliestLimitReset();
+                        const when = reset ? ` Earliest reset: ${new Date(reset).toLocaleString()}.` : '';
+                        const base = mappedResponse ?? response;
+                        let payload: any = null;
+                        try {
+                            payload = JSON.parse(await base.clone().text());
+                        } catch {
+                            payload = null;
+                        }
+                        if (payload && typeof payload === 'object') {
+                            payload.error = {
+                                ...(payload.error ?? {}),
+                                message: `All ${accounts.length} connected ChatGPT accounts have reached their usage limit.${when}`,
+                            };
+                            const h = new Headers(base.headers);
+                            h.set('content-type', 'application/json; charset=utf-8');
+                            return new Response(JSON.stringify(payload), { status: HTTP_STATUS.TOO_MANY_REQUESTS, statusText: 'Too Many Requests', headers: h });
+                        }
+                    }
+                    return mappedResponse ?? response;
                 }
 
                 // For other errors, log and return the error response
@@ -1012,7 +1129,8 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 email: record.email,
                 label: record.plan ? `ChatGPT ${record.plan}` : undefined,
                 avatarUrl: record.picture,
-                isRateLimited: record.quota?.rateLimitReached === true,
+                isRateLimited: tokenStore.isAccountLimited(record.id),
+                rateLimitResetAt: record.limitedUntil && record.limitedUntil > Date.now() ? record.limitedUntil : undefined,
                 quota: record.quota
                     ? {
                           models: record.quota.models,

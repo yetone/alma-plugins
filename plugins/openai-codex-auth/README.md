@@ -8,6 +8,7 @@ Use your ChatGPT Plus/Pro subscription to access OpenAI Codex models directly in
 - **30+ Model Variants**: Access GPT-5.3, GPT-5.3 Codex, GPT-5.2, GPT-5.2 Codex, GPT-5.1 Codex, and more
 - **Reasoning Control**: Different reasoning effort levels (none, low, medium, high, xhigh)
 - **Streaming Support**: Real-time streaming responses
+- **Multi-Account Failover**: Connect several ChatGPT accounts; when the active one hits its usage limit, requests automatically continue on the next account with quota (the exhausted account is parked until its window resets and shown as rate-limited in settings)
 
 ## Supported Models
 
