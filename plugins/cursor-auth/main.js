@@ -5807,7 +5807,8 @@ async function activate(context) {
         const { verifier, uuid, loginUrl } = await generateCursorAuthParams();
         ui.showNotification("Opening browser for Cursor login...", { type: "info" });
         logger.info("Starting Cursor OAuth flow...");
-        openBrowser(loginUrl);
+        if (!await ui.openExternal(loginUrl))
+          openBrowser(loginUrl);
         ui.showNotification("Waiting for Cursor login to complete...", { type: "info" });
         const { accessToken, refreshToken } = await pollCursorAuth(uuid, verifier);
         await tokenStore.saveTokens({

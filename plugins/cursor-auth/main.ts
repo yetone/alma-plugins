@@ -136,7 +136,9 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 // Start OAuth flow — Cursor uses poll-based auth (no callback redirect)
                 // Open browser and poll for login completion
                 logger.info('Starting Cursor OAuth flow...');
-                openBrowser(loginUrl);
+                // Through the host: on alma-server (no browser) it hands the link
+                // to the web UI so the user opens it on their own computer.
+                if (!(await ui.openExternal(loginUrl))) openBrowser(loginUrl);
 
                 ui.showNotification('Waiting for Cursor login to complete...', { type: 'info' });
 

@@ -1,7 +1,7 @@
 {
     "id": "cursor-auth",
     "name": "Cursor Auth",
-    "version": "1.8.1",
+    "version": "1.8.2",
     "description": "Use Cursor subscription with Alma via OAuth. Translates OpenAI format to Cursor's gRPC protocol via custom fetch wrapper.",
     "author": {
         "name": "Alma Community"
