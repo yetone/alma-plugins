@@ -92,7 +92,7 @@
         {
             "id": "openai-codex-auth",
             "name": "OpenAI Codex Auth",
-            "version": "1.9.0",
+            "version": "1.10.0",
             "description": "Use ChatGPT Plus/Pro subscription to access OpenAI Codex models via OAuth. Multi-account with email, avatar (via Gravatar), and quota in settings. GPT Image 2 generation and editing.",
             "author": {
                 "name": "Alma Community"

@@ -30,6 +30,8 @@ import { fetchAccountProfile, avatarUrlForEmail } from './lib/profile';
 
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api';
 const DUMMY_API_KEY = 'chatgpt-oauth';
+// The chat's Fast choice from Alma ('priority' | 'default'); see the fetch wrapper.
+const ALMA_SERVICE_TIER_HEADER = 'x-alma-service-tier';
 
 // The Codex backend gates newer models (e.g. gpt-5.6-luna) on a User-Agent
 // that identifies a known Codex client — without it /codex/responses 404s
@@ -645,10 +647,12 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                     }
 
                     // Fast mode: the priority service tier, same as Codex CLI's
-                    // `/fast`. It applies to every request through this provider,
-                    // so subagents get it too. Only sent when the catalog lists the
+                    // `/fast`. The chat's own choice arrives as the x-alma-service-tier
+                    // header (Alma 0.4.151+, subagents inherit it); without one the
+                    // plugin setting decides. Only sent when the catalog lists the
                     // tier for this model; the backend bills it at a higher rate.
-                    const fastMode = settings.get<boolean>('openaiCodex.fastMode', false);
+                    const chatTier = new Headers(init?.headers ?? {}).get(ALMA_SERVICE_TIER_HEADER);
+                    const fastMode = chatTier ? chatTier === 'priority' : settings.get<boolean>('openaiCodex.fastMode', false);
                     if (fastMode && supportsServiceTier(normalizedModel, 'priority')) {
                         transformedBody.service_tier = 'priority';
                     }
@@ -677,6 +681,8 @@ export async function activate(context: PluginContext): Promise<PluginActivation
             // Step 5: Create headers with OAuth credentials (matching opencode's createCodexHeaders)
             const headers = new Headers(init?.headers ?? {});
             headers.delete('x-api-key');
+            // Addressed to this plugin only; never forwarded upstream.
+            headers.delete(ALMA_SERVICE_TIER_HEADER);
             headers.set('Authorization', `Bearer ${accessToken}`);
             headers.set(OPENAI_HEADERS.ACCOUNT_ID, accountId);
             headers.set(OPENAI_HEADERS.BETA, 'responses=experimental');
@@ -1021,6 +1027,10 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                 // available and handled separately, so only low..ultra are listed).
                 // Lets the composer render a model-aware thinking selector.
                 reasoningLevels: toComposerReasoningLevels(model.supportedReasoningLevels),
+                // 'priority' puts Alma's per-chat Fast toggle in the composer; the
+                // setting is what a chat that never chose runs with.
+                serviceTiers: model.serviceTiers,
+                defaultServiceTier: settings.get<boolean>('openaiCodex.fastMode', false) && model.serviceTiers?.includes('priority') ? 'priority' : undefined,
             },
             providerOptions: {
                 reasoning: model.reasoning,
