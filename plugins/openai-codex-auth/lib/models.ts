@@ -68,6 +68,10 @@ export function buildModelsFromApiResponse(data: any): CodexModelInfo[] {
         const supportedReasoningLevels = levels
             .map(l => l.effort as ReasoningEffort)
             .filter((e): e is ReasoningEffort => !!e);
+        const tiers: unknown[] = Array.isArray(m.service_tiers) ? m.service_tiers : [];
+        const serviceTiers = tiers
+            .map(t => (t && typeof t === 'object' ? (t as { id?: unknown }).id : undefined))
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
 
         // Default variant (with the model's default reasoning level). Carries the
         // full supported-levels list so the composer can render a per-model
@@ -81,6 +85,7 @@ export function buildModelsFromApiResponse(data: any): CodexModelInfo[] {
             supportedReasoningLevels: supportedReasoningLevels.length ? supportedReasoningLevels : undefined,
             contextWindow,
             maxOutputTokens: 128000,
+            ...(serviceTiers.length ? { serviceTiers } : {}),
         });
 
         // Additional reasoning variants
@@ -96,6 +101,7 @@ export function buildModelsFromApiResponse(data: any): CodexModelInfo[] {
                 reasoning: effort,
                 contextWindow,
                 maxOutputTokens: 128000,
+                ...(serviceTiers.length ? { serviceTiers } : {}),
             });
         }
     }
@@ -635,6 +641,16 @@ export function getBaseModelId(modelId: string): string {
         if (modelId.endsWith(`-${suffix}`)) return modelId.slice(0, -(suffix.length + 1));
     }
     return modelId;
+}
+
+/**
+ * Whether the backend catalog offers `tier` (e.g. "priority", Fast mode) for
+ * this model. Unknown models (catalog not loaded yet) never get a tier, so a
+ * request is never rejected for asking one the model lacks.
+ */
+export function supportsServiceTier(modelId: string, tier: string): boolean {
+    const model = getModelInfo(modelId) ?? getModelInfo(getBaseModelId(modelId));
+    return model?.serviceTiers?.includes(tier) ?? false;
 }
 
 /**

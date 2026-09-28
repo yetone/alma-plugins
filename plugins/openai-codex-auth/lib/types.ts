@@ -86,6 +86,9 @@ export interface CodexModelInfo {
     supportedReasoningLevels?: ReasoningEffort[];
     contextWindow?: number;
     maxOutputTokens?: number;
+    // Service tiers the backend offers for this model beyond the default
+    // (from the catalog's service_tiers, e.g. "priority" = Fast mode).
+    serviceTiers?: string[];
 }
 
 // ============================================================================

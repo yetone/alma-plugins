@@ -1,8 +1,8 @@
 {
     "id": "openai-codex-auth",
     "name": "OpenAI Codex Auth",
-    "version": "1.8.9",
-    "description": "Use ChatGPT Plus/Pro subscription with Alma via OAuth. Multi-account with email, avatar, and quota in settings; dynamic model discovery; GPT Image 2 generation and editing.",
+    "version": "1.9.0",
+    "description": "Use ChatGPT Plus/Pro subscription with Alma via OAuth. Multi-account with email, avatar, and quota in settings; dynamic model discovery; Fast mode; GPT Image 2 generation and editing.",
     "author": {
         "name": "Alma Community"
     },
@@ -39,7 +39,17 @@
                 "id": "openai-codex-auth.logout",
                 "title": "Logout from ChatGPT (Codex)"
             }
-        ]
+        ],
+        "configuration": {
+            "title": "OpenAI Codex",
+            "properties": {
+                "openaiCodex.fastMode": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use the priority service tier (Codex CLI's /fast) on models that offer it. About 1.5x faster, and it draws down your ChatGPT plan's usage faster. Applies to the main agent and subagents."
+                }
+            }
+        }
     },
     "keywords": [
         "openai",

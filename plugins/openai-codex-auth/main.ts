@@ -17,7 +17,7 @@
 import type { PluginContext, PluginActivation } from 'alma-plugin-api';
 import { TokenStore } from './lib/token-store';
 import { getAuthorizationUrl, exchangeCodeForTokens } from './lib/auth';
-import { getActiveModels, setCachedModels, isCatalogCached, buildModelsFromApiResponse, getBaseModelId, getReasoningEffort, collapseReasoningVariants, CODEX_IMAGE_MODELS } from './lib/models';
+import { getActiveModels, setCachedModels, isCatalogCached, buildModelsFromApiResponse, getBaseModelId, getReasoningEffort, supportsServiceTier, collapseReasoningVariants, CODEX_IMAGE_MODELS } from './lib/models';
 import type { CodexModelInfo } from './lib/types';
 import { getCodexInstructions } from './lib/codex-instructions';
 import { addAlmaBridgeMessage } from './lib/alma-codex-bridge';
@@ -87,7 +87,7 @@ const HTTP_STATUS = {
 // ============================================================================
 
 export async function activate(context: PluginContext): Promise<PluginActivation> {
-    const { logger, storage, providers, commands, ui } = context;
+    const { logger, storage, providers, commands, ui, settings } = context;
 
     logger.info('OpenAI Codex Auth plugin activating...');
 
@@ -644,6 +644,15 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                         transformedBody.tools = parsed.tools;
                     }
 
+                    // Fast mode: the priority service tier, same as Codex CLI's
+                    // `/fast`. It applies to every request through this provider,
+                    // so subagents get it too. Only sent when the catalog lists the
+                    // tier for this model; the backend bills it at a higher rate.
+                    const fastMode = settings.get<boolean>('openaiCodex.fastMode', false);
+                    if (fastMode && supportsServiceTier(normalizedModel, 'priority')) {
+                        transformedBody.service_tier = 'priority';
+                    }
+
                     // Preserve prompt_cache_key from AI SDK for cache continuity
                     if (parsed.prompt_cache_key) {
                         transformedBody.prompt_cache_key = parsed.prompt_cache_key;
@@ -657,7 +666,8 @@ export async function activate(context: PluginContext): Promise<PluginActivation
                     body = JSON.stringify(transformedBody);
                     logger.debug(
                         `Transformed request: model=${originalModel}->${normalizedModel}, reasoning=${reasoningEffort}` +
-                            `${wireReasoningEffort !== reasoningEffort ? `(wire:${wireReasoningEffort})` : ''}, streaming=${isStreaming}`
+                            `${wireReasoningEffort !== reasoningEffort ? `(wire:${wireReasoningEffort})` : ''}, streaming=${isStreaming}` +
+                            `${transformedBody.service_tier ? `, service_tier=${transformedBody.service_tier}` : ''}`
                     );
                 } catch (e) {
                     logger.error('Error transforming request body:', e);
