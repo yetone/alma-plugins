@@ -1,7 +1,7 @@
 {
     "$schema": "./registry.schema.json",
     "version": "1.0.0",
-    "lastUpdated": "2026-07-14T20:07:08Z",
+    "lastUpdated": "2026-10-09T11:45:41Z",
     "plugins": [
         {
             "id": "hello-world",
@@ -151,6 +151,21 @@
             "tags": ["memory", "knowledge", "recall", "graph", "local-first"],
             "repository": "https://github.com/yetone/alma-plugins",
             "path": "plugins/nowledge-mem",
+            "downloads": 0,
+            "rating": 0,
+            "featured": false
+        },        {
+            "id": "thread-gtd",
+            "name": "Thread GTD Status",
+            "version": "1.0.0",
+            "description": "Keeps conversation GTD status in sync: in_progress while Alma is generating, todo when it is your turn. Turns the sidebar into a what-needs-my-attention board.",
+            "author": {
+                "name": "ttmouse"
+            },
+            "type": ["integration"],
+            "tags": ["gtd", "status", "sidebar", "productivity", "automation"],
+            "repository": "https://github.com/yetone/alma-plugins",
+            "path": "plugins/thread-gtd",
             "downloads": 0,
             "rating": 0,
             "featured": false
