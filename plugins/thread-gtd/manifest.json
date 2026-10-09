@@ -1,0 +1,22 @@
+{
+  "id": "thread-gtd",
+  "name": "Thread GTD Status",
+  "version": "1.0.0",
+  "description": "Keeps conversation GTD status in sync: in_progress while Alma is generating, todo when it is your turn. Turns the sidebar into a what-needs-my-attention board.",
+  "author": {
+    "name": "ttmouse"
+  },
+  "main": "main.js",
+  "engines": {
+    "alma": "^0.1.0"
+  },
+  "type": "integration",
+  "permissions": [
+    "chat:read",
+    "network:localhost"
+  ],
+  "activationEvents": [
+    "onStartup"
+  ],
+  "contributes": {}
+}
