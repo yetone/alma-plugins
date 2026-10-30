@@ -1,7 +1,7 @@
 {
     "$schema": "./registry.schema.json",
     "version": "1.0.0",
-    "lastUpdated": "2026-10-11T12:10:00Z",
+    "lastUpdated": "2026-10-30T13:00:00Z",
     "plugins": [
         {
             "id": "hello-world",
@@ -140,7 +140,7 @@
         {
             "id": "nowledge-mem",
             "name": "Nowledge Mem",
-            "version": "0.7.7",
+            "version": "0.7.8",
             "description": "Local-first personal memory for Alma, powered by Nowledge Mem",
             "author": {
                 "name": "Nowledge Labs",
