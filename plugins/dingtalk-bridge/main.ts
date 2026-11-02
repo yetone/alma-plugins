@@ -18,7 +18,7 @@ import type { PluginContext, PluginActivation } from 'alma-plugin-api';
 import { DingTalkBridge } from './lib/bridge';
 import type { BridgeConfig, SessionMode } from './lib/types';
 
-const STATUS_BAR_ID = 'dingtalk-bridge.status';
+const STATUS_BAR_ID = 'alma-dingtalk-bridge.status';
 
 export async function activate(context: PluginContext): Promise<PluginActivation> {
     const { logger, settings, ui, commands } = context;
