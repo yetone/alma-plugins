@@ -21676,7 +21676,7 @@ class DingTalkBridge {
 }
 
 // main.ts
-var STATUS_BAR_ID = "dingtalk-bridge.status";
+var STATUS_BAR_ID = "alma-dingtalk-bridge.status";
 async function activate(context) {
   const { logger, settings, ui, commands } = context;
   logger.info("DingTalk Bridge 正在激活…");
