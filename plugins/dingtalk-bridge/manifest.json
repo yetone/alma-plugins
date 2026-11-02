@@ -1,0 +1,112 @@
+{
+    "id": "dingtalk-bridge",
+    "name": "DingTalk Bridge",
+    "version": "1.0.0",
+    "description": "把钉钉机器人接成 Alma 的聊天渠道：Stream 模式收消息，驱动完整 agent（工具/技能/项目工作区），回复推回钉钉。",
+    "author": {
+        "name": "JasonChou"
+    },
+    "main": "main.js",
+    "engines": {
+        "alma": "^0.4.0"
+    },
+    "type": "integration",
+    "permissions": [
+        "network:fetch",
+        "network:domain:dingtalk.com",
+        "network:domain:api.dingtalk.com",
+        "network:domain:oapi.dingtalk.com",
+        "network:localhost",
+        "chat:read",
+        "chat:write",
+        "notifications",
+        "storage:secrets"
+    ],
+    "activationEvents": ["onStartup"],
+    "contributes": {
+        "commands": [
+            {
+                "id": "dingtalkBridge.status",
+                "title": "钉钉桥接：查看状态"
+            },
+            {
+                "id": "dingtalkBridge.restart",
+                "title": "钉钉桥接：重连"
+            },
+            {
+                "id": "dingtalkBridge.clearSessions",
+                "title": "钉钉桥接：清空会话映射"
+            },
+            {
+                "id": "dingtalkBridge.testAlma",
+                "title": "钉钉桥接：连通性自检"
+            }
+        ],
+        "components": {
+            "statusBar": [
+                {
+                    "id": "dingtalk-bridge.status",
+                    "alignment": "right",
+                    "priority": 90
+                }
+            ]
+        },
+        "configuration": {
+            "title": "DingTalk Bridge",
+            "properties": {
+                "dingtalkBridge.clientId": {
+                    "type": "string",
+                    "default": "",
+                    "description": "钉钉应用 AppKey（Client ID）"
+                },
+                "dingtalkBridge.clientSecret": {
+                    "type": "string",
+                    "default": "",
+                    "description": "钉钉应用 AppSecret（Client Secret）"
+                },
+                "dingtalkBridge.robotCode": {
+                    "type": "string",
+                    "default": "",
+                    "description": "机器人 RobotCode，留空则沿用 clientId"
+                },
+                "dingtalkBridge.almaApiPort": {
+                    "type": "number",
+                    "default": 23001,
+                    "description": "Alma 本地 API 端口（默认 23001）"
+                },
+                "dingtalkBridge.defaultModel": {
+                    "type": "string",
+                    "default": "",
+                    "description": "使用的模型，格式 providerId:modelId。留空则跟随 Alma 默认模型"
+                },
+                "dingtalkBridge.workspaceId": {
+                    "type": "string",
+                    "default": "",
+                    "description": "绑定到哪个本地项目（工作区 ID）。留空跟随 Alma 默认工作区。可随时用 /use 命令切换"
+                },
+                "dingtalkBridge.mode": {
+                    "type": "string",
+                    "default": "per-chat",
+                    "enum": ["per-chat", "per-sender", "single"],
+                    "description": "会话隔离策略：per-chat 每群一个线程；per-sender 群内每人各自一个线程；single 全部共用一个线程"
+                },
+                "dingtalkBridge.allowedStaffIds": {
+                    "type": "string",
+                    "default": "",
+                    "description": "仅允许这些 senderStaffId 使用，逗号分隔。留空表示不限制"
+                },
+                "dingtalkBridge.streamingReply": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "流式回复：边生成边分段推送。关闭则生成结束后一次性发送"
+                },
+                "dingtalkBridge.replyOnToolUse": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "使用工具时先推送一条「正在使用 xxx…」提示，避免长时间无响应"
+                }
+            }
+        }
+    },
+    "keywords": ["dingtalk", "钉钉", "channel", "bridge", "robot", "stream"]
+}
