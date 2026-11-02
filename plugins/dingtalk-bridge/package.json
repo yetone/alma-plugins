@@ -1,0 +1,22 @@
+{
+    "name": "alma-dingtalk-bridge",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "DingTalk channel bridge for Alma — Stream mode intake, full agent turn via Alma's internal WebSocket protocol",
+    "author": {
+        "name": "JasonChou"
+    },
+    "license": "MIT",
+    "main": "main.js",
+    "scripts": {
+        "build": "bun build main.ts --outfile main.js --target node --format esm --external electron --external zod",
+        "test": "node test/inbound.mjs"
+    },
+    "dependencies": {
+        "dingtalk-stream": "^2.1.6-beta.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.6.0"
+    }
+}
