@@ -1,5 +1,5 @@
 {
-    "id": "dingtalk-bridge",
+    "id": "alma-dingtalk-bridge",
     "name": "DingTalk Bridge",
     "version": "1.0.0",
     "description": "把钉钉机器人接成 Alma 的聊天渠道：Stream 模式收消息，驱动完整 agent（工具/技能/项目工作区），回复推回钉钉。",
@@ -19,10 +19,13 @@
         "network:localhost",
         "chat:read",
         "chat:write",
+        "tools:register",
         "notifications",
         "storage:secrets"
     ],
-    "activationEvents": ["onStartup"],
+    "activationEvents": [
+        "onStartup"
+    ],
     "contributes": {
         "commands": [
             {
@@ -45,7 +48,7 @@
         "components": {
             "statusBar": [
                 {
-                    "id": "dingtalk-bridge.status",
+                    "id": "alma-dingtalk-bridge.status",
                     "alignment": "right",
                     "priority": 90
                 }
@@ -87,7 +90,11 @@
                 "dingtalkBridge.mode": {
                     "type": "string",
                     "default": "per-chat",
-                    "enum": ["per-chat", "per-sender", "single"],
+                    "enum": [
+                        "per-chat",
+                        "per-sender",
+                        "single"
+                    ],
                     "description": "会话隔离策略：per-chat 每群一个线程；per-sender 群内每人各自一个线程；single 全部共用一个线程"
                 },
                 "dingtalkBridge.allowedStaffIds": {
@@ -108,5 +115,12 @@
             }
         }
     },
-    "keywords": ["dingtalk", "钉钉", "channel", "bridge", "robot", "stream"]
+    "keywords": [
+        "dingtalk",
+        "钉钉",
+        "channel",
+        "bridge",
+        "robot",
+        "stream"
+    ]
 }
