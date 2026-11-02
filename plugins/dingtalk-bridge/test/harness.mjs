@@ -52,7 +52,7 @@ export function createContext(opts = {}) {
     };
 
     const context = {
-        id: 'dingtalk-bridge',
+        id: 'alma-dingtalk-bridge',
         extensionPath: root,
         storagePath: path.join(root, 'test/.storage'),
         globalStoragePath: path.join(root, 'test/.storage'),
