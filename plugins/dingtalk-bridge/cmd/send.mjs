@@ -20,7 +20,7 @@ async function getPluginSettings() {
         if (res.ok) {
             const list = await res.json();
             const plugin = (Array.isArray(list) ? list : list?.plugins ?? []).find(
-                (p) => p.id === 'dingtalk-bridge' || p.name === 'DingTalk Bridge',
+                (p) => p.id === 'alma-dingtalk-bridge' || p.name === 'DingTalk Bridge',
             );
             if (plugin?.settings) {
                 return typeof plugin.settings === 'string' ? JSON.parse(plugin.settings) : plugin.settings;
@@ -32,7 +32,7 @@ async function getPluginSettings() {
 
     /* 兜底：直接读插件目录下的 state */
     const candidates = [
-        path.join(os.homedir(), '.config/alma/plugins/dingtalk-bridge/settings.json'),
+        path.join(os.homedir(), '.config/alma/plugins/alma-dingtalk-bridge/settings.json'),
         path.join(os.homedir(), '.config/alma/plugin-state/dingtalk-bridge.json'),
     ];
     for (const file of candidates) {
