@@ -1,159 +1,258 @@
 {
-    "$schema": "./registry.schema.json",
-    "version": "1.0.0",
-    "lastUpdated": "2026-10-30T13:00:00Z",
-    "plugins": [
-        {
-            "id": "hello-world",
-            "name": "Hello World",
-            "version": "1.0.1",
-            "description": "A simple example plugin that demonstrates basic plugin structure",
-            "author": {
-                "name": "Alma Team",
-                "email": "hello@alma.now"
-            },
-            "type": ["tool"],
-            "tags": ["example", "starter", "tool"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/hello-world",
-            "downloads": 0,
-            "rating": 0,
-            "featured": false
-        },
-        {
-            "id": "token-counter",
-            "name": "Token Counter",
-            "version": "1.0.0",
-            "description": "Displays token count and estimated cost in the status bar",
-            "author": {
-                "name": "Alma Team",
-                "email": "hello@alma.now"
-            },
-            "type": ["ui"],
-            "tags": ["tokens", "cost", "status-bar", "utility"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/token-counter",
-            "downloads": 0,
-            "rating": 0,
-            "featured": true
-        },
-        {
-            "id": "catppuccin-theme",
-            "name": "Catppuccin Theme",
-            "version": "1.0.0",
-            "description": "A soothing pastel theme for Alma, based on the popular Catppuccin color palette",
-            "author": {
-                "name": "Alma Team",
-                "email": "hello@alma.now"
-            },
-            "type": ["theme"],
-            "tags": ["theme", "catppuccin", "pastel", "dark", "light"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/catppuccin-theme",
-            "homepage": "https://github.com/catppuccin/catppuccin",
-            "downloads": 0,
-            "rating": 0,
-            "featured": true
-        },
-        {
-            "id": "prompt-enhancer",
-            "name": "Prompt Enhancer",
-            "version": "1.0.1",
-            "description": "Automatically enhances prompts with additional context and instructions for better AI responses",
-            "author": {
-                "name": "Alma Team",
-                "email": "hello@alma.now"
-            },
-            "type": ["transform"],
-            "tags": ["prompt", "enhancement", "transform", "ai"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/prompt-enhancer",
-            "downloads": 0,
-            "rating": 0,
-            "featured": false
-        },
-        {
-            "id": "tool-monitor",
-            "name": "Tool Monitor",
-            "version": "1.2.4",
-            "description": "Monitor and track all tool executions with statistics and performance metrics. Persists data across sessions and loads historical data from messages.",
-            "author": {
-                "name": "Alma Team",
-                "email": "hello@alma.now"
-            },
-            "type": ["ui"],
-            "tags": ["tools", "monitor", "statistics", "status-bar", "debugging"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/tool-monitor",
-            "downloads": 0,
-            "rating": 0,
-            "featured": false
-        },
-        {
-            "id": "openai-codex-auth",
-            "name": "OpenAI Codex Auth",
-            "version": "1.10.0",
-            "description": "Use ChatGPT Plus/Pro subscription to access OpenAI Codex models via OAuth. Multi-account with email, avatar (via Gravatar), and quota in settings. GPT Image 2 generation and editing.",
-            "author": {
-                "name": "Alma Community"
-            },
-            "type": ["provider"],
-            "tags": ["openai", "codex", "chatgpt", "oauth", "gpt-5", "provider"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/openai-codex-auth",
-            "downloads": 0,
-            "rating": 0,
-            "featured": true
-        },
-        {
-            "id": "cursor-auth",
-            "name": "Cursor Auth",
-            "version": "1.8.2",
-            "description": "Use Cursor subscription to access Claude, GPT, Gemini and other models via OAuth with local OpenAI-compatible proxy",
-            "author": {
-                "name": "Alma Community"
-            },
-            "type": ["provider"],
-            "tags": ["cursor", "oauth", "proxy", "grpc", "claude", "gpt", "gemini", "provider"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/cursor-auth",
-            "downloads": 0,
-            "rating": 0,
-            "featured": true
-        },
-        {
-            "id": "xai-grok-auth",
-            "name": "xAI Grok Auth",
-            "version": "1.3.3",
-            "description": "Use SuperGrok subscription with Alma via xAI OAuth. Chat, image generation/editing (grok-imagine), account email/avatar and quota in settings.",
-            "author": {
-                "name": "Alma Community"
-            },
-            "type": ["provider"],
-            "tags": ["xai", "grok", "supergrok", "oauth", "provider"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/xai-grok-auth",
-            "downloads": 0,
-            "rating": 0,
-            "featured": true
-        },
-        {
-            "id": "nowledge-mem",
-            "name": "Nowledge Mem",
-            "version": "0.7.8",
-            "description": "Local-first personal memory for Alma, powered by Nowledge Mem",
-            "author": {
-                "name": "Nowledge Labs",
-                "url": "https://nowledge-labs.ai"
-            },
-            "homepage": "https://mem.nowledge.co",
-            "type": ["tool"],
-            "tags": ["memory", "knowledge", "recall", "graph", "local-first"],
-            "repository": "https://github.com/yetone/alma-plugins",
-            "path": "plugins/nowledge-mem",
-            "downloads": 0,
-            "rating": 0,
-            "featured": false
-        }
-    ]
+  "$schema": "./registry.schema.json",
+  "version": "1.0.0",
+  "lastUpdated": "2026-11-02T06:30:59Z",
+  "plugins": [
+    {
+      "id": "hello-world",
+      "name": "Hello World",
+      "version": "1.0.1",
+      "description": "A simple example plugin that demonstrates basic plugin structure",
+      "author": {
+        "name": "Alma Team",
+        "email": "hello@alma.now"
+      },
+      "type": [
+        "tool"
+      ],
+      "tags": [
+        "example",
+        "starter",
+        "tool"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/hello-world",
+      "downloads": 0,
+      "rating": 0,
+      "featured": false
+    },
+    {
+      "id": "token-counter",
+      "name": "Token Counter",
+      "version": "1.0.0",
+      "description": "Displays token count and estimated cost in the status bar",
+      "author": {
+        "name": "Alma Team",
+        "email": "hello@alma.now"
+      },
+      "type": [
+        "ui"
+      ],
+      "tags": [
+        "tokens",
+        "cost",
+        "status-bar",
+        "utility"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/token-counter",
+      "downloads": 0,
+      "rating": 0,
+      "featured": true
+    },
+    {
+      "id": "catppuccin-theme",
+      "name": "Catppuccin Theme",
+      "version": "1.0.0",
+      "description": "A soothing pastel theme for Alma, based on the popular Catppuccin color palette",
+      "author": {
+        "name": "Alma Team",
+        "email": "hello@alma.now"
+      },
+      "type": [
+        "theme"
+      ],
+      "tags": [
+        "theme",
+        "catppuccin",
+        "pastel",
+        "dark",
+        "light"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/catppuccin-theme",
+      "homepage": "https://github.com/catppuccin/catppuccin",
+      "downloads": 0,
+      "rating": 0,
+      "featured": true
+    },
+    {
+      "id": "prompt-enhancer",
+      "name": "Prompt Enhancer",
+      "version": "1.0.1",
+      "description": "Automatically enhances prompts with additional context and instructions for better AI responses",
+      "author": {
+        "name": "Alma Team",
+        "email": "hello@alma.now"
+      },
+      "type": [
+        "transform"
+      ],
+      "tags": [
+        "prompt",
+        "enhancement",
+        "transform",
+        "ai"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/prompt-enhancer",
+      "downloads": 0,
+      "rating": 0,
+      "featured": false
+    },
+    {
+      "id": "tool-monitor",
+      "name": "Tool Monitor",
+      "version": "1.2.4",
+      "description": "Monitor and track all tool executions with statistics and performance metrics. Persists data across sessions and loads historical data from messages.",
+      "author": {
+        "name": "Alma Team",
+        "email": "hello@alma.now"
+      },
+      "type": [
+        "ui"
+      ],
+      "tags": [
+        "tools",
+        "monitor",
+        "statistics",
+        "status-bar",
+        "debugging"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/tool-monitor",
+      "downloads": 0,
+      "rating": 0,
+      "featured": false
+    },
+    {
+      "id": "openai-codex-auth",
+      "name": "OpenAI Codex Auth",
+      "version": "1.10.0",
+      "description": "Use ChatGPT Plus/Pro subscription to access OpenAI Codex models via OAuth. Multi-account with email, avatar (via Gravatar), and quota in settings. GPT Image 2 generation and editing.",
+      "author": {
+        "name": "Alma Community"
+      },
+      "type": [
+        "provider"
+      ],
+      "tags": [
+        "openai",
+        "codex",
+        "chatgpt",
+        "oauth",
+        "gpt-5",
+        "provider"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/openai-codex-auth",
+      "downloads": 0,
+      "rating": 0,
+      "featured": true
+    },
+    {
+      "id": "cursor-auth",
+      "name": "Cursor Auth",
+      "version": "1.8.2",
+      "description": "Use Cursor subscription to access Claude, GPT, Gemini and other models via OAuth with local OpenAI-compatible proxy",
+      "author": {
+        "name": "Alma Community"
+      },
+      "type": [
+        "provider"
+      ],
+      "tags": [
+        "cursor",
+        "oauth",
+        "proxy",
+        "grpc",
+        "claude",
+        "gpt",
+        "gemini",
+        "provider"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/cursor-auth",
+      "downloads": 0,
+      "rating": 0,
+      "featured": true
+    },
+    {
+      "id": "xai-grok-auth",
+      "name": "xAI Grok Auth",
+      "version": "1.3.3",
+      "description": "Use SuperGrok subscription with Alma via xAI OAuth. Chat, image generation/editing (grok-imagine), account email/avatar and quota in settings.",
+      "author": {
+        "name": "Alma Community"
+      },
+      "type": [
+        "provider"
+      ],
+      "tags": [
+        "xai",
+        "grok",
+        "supergrok",
+        "oauth",
+        "provider"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/xai-grok-auth",
+      "downloads": 0,
+      "rating": 0,
+      "featured": true
+    },
+    {
+      "id": "nowledge-mem",
+      "name": "Nowledge Mem",
+      "version": "0.7.8",
+      "description": "Local-first personal memory for Alma, powered by Nowledge Mem",
+      "author": {
+        "name": "Nowledge Labs",
+        "url": "https://nowledge-labs.ai"
+      },
+      "homepage": "https://mem.nowledge.co",
+      "type": [
+        "tool"
+      ],
+      "tags": [
+        "memory",
+        "knowledge",
+        "recall",
+        "graph",
+        "local-first"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/nowledge-mem",
+      "downloads": 0,
+      "rating": 0,
+      "featured": false
+    },
+    {
+      "id": "dingtalk-bridge",
+      "name": "DingTalk Bridge",
+      "version": "1.0.0",
+      "description": "Bridge DingTalk bots into Alma as a chat channel: Stream-mode intake drives a full agent turn (tools, skills, project workspace) and posts replies back to DingTalk.",
+      "author": {
+        "name": "JasonChou",
+        "url": "https://github.com/JasonChou0v0"
+      },
+      "type": [
+        "integration"
+      ],
+      "tags": [
+        "dingtalk",
+        "钉钉",
+        "channel",
+        "bridge",
+        "robot",
+        "stream",
+        "im"
+      ],
+      "repository": "https://github.com/yetone/alma-plugins",
+      "path": "plugins/dingtalk-bridge",
+      "downloads": 0,
+      "rating": 0,
+      "featured": false
+    }
+  ]
 }
