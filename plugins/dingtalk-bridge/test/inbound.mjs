@@ -166,13 +166,25 @@ await runCase('命令 /ws 列出工作区', '/ws', {
     console.log('\n[e2e] ▶ 重复消息去重');
     const ev = downstream('只回 OK');
     const before = received.length;
+    const turnsBefore = bridge.getCompletedTurns();
+
+    /* 第一次：必须等回合真正结束，否则「没推送」会被误判成去重成功 */
     await bridge.handleIncoming(ev);
-    await waitForPush(before);
+    const finished = await waitForTurn(turnsBefore);
     const afterFirst = received.length;
-    await bridge.handleIncoming(ev); /* 同一 msgId */
-    await new Promise((r) => setTimeout(r, 2500));
-    const ok = received.length === afterFirst;
-    console.log(`[e2e]   首次推送 ${afterFirst - before} 条，重复后新增 ${received.length - afterFirst} 条`);
+    const firstDelivered = afterFirst > before;
+
+    /* 第二次：同一个 msgId，应当被直接丢弃，不产生新回合也不推送 */
+    const turnsAfterFirst = bridge.getCompletedTurns();
+    await bridge.handleIncoming(ev);
+    await new Promise((r) => setTimeout(r, 3000));
+    const noNewPush = received.length === afterFirst;
+    const noNewTurn = bridge.getCompletedTurns() === turnsAfterFirst;
+
+    const ok = finished && firstDelivered && noNewPush && noNewTurn;
+    console.log(
+        `[e2e]   首轮完成=${finished} 首轮推送=${afterFirst - before} 条 | 重复后新增推送=${received.length - afterFirst} 条 新回合=${noNewTurn ? '无' : '有'}`,
+    );
     console.log(`[e2e]   ${ok ? '✅ PASS' : '❌ FAIL'}`);
     results.push(ok);
 }
