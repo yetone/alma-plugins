@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## [0.7.12] - 2026-11-12
+
+- Refuse HTTP redirects on authenticated requests and Space-roster reads,
+  keeping credentials and transcripts at the configured backend.
+
+## [0.7.11] - 2026-11-12
+
+### Fixed
+
+- Declare the exact Space protocol on direct HTTP session synchronization so
+  workspaces using current Spaces can accept captured conversations.
+- Preserve the selected destination; do not fall back to an unscoped write
+  when a configured Space cannot be resolved.
+
+## [0.7.10] - Unreleased
+
+### Changed
+
+- Mark fallback save dates explicitly rather than presenting them as event dates; verify conflicting evidence against its sources.
+- Relevant memories are packed by a 6,000-character budget with whole memories instead of 220-character snippets, and each one is dated with when the event happened or when its source conversation took place.
+- `maxRecallResults` now defaults to 10.
 
 ## [0.7.9] - 2026-11-02
 
