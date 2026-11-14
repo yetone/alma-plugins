@@ -4,6 +4,21 @@
     "lastUpdated": "2026-11-02T08:13:32Z",
     "plugins": [
         {
+            "id": "tokenjuice",
+            "name": "Tokenjuice",
+            "version": "1.0.0",
+            "description": "Reduce successful Bash output with the locally installed Tokenjuice CLI",
+            "author": { "name": "Vincent Koc", "url": "https://github.com/vincentkoc" },
+            "type": ["transform"],
+            "tags": ["tokens", "bash", "output", "utility"],
+            "repository": "https://github.com/yetone/alma-plugins",
+            "path": "plugins/tokenjuice",
+            "homepage": "https://github.com/vincentkoc/tokenjuice",
+            "downloads": 0,
+            "rating": 0,
+            "featured": false
+        },
+        {
             "id": "hello-world",
             "name": "Hello World",
             "version": "1.0.1",

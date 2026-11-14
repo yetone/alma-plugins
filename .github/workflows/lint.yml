@@ -37,6 +37,9 @@ jobs:
       - name: Check manifest / package.json / registry.json versions
         run: node scripts/lint-versions.mjs
 
+      - name: Test Tokenjuice hook contract
+        run: node --test plugins/tokenjuice/main.test.js
+
       - name: Explain failure
         if: failure()
         run: |
