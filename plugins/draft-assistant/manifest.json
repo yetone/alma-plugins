@@ -1,0 +1,43 @@
+{
+    "id": "draft-assistant",
+    "name": "Draft Assistant",
+    "version": "1.0.0",
+    "description": "Preview a rewritten draft or a predicted next message before copying it into chat",
+    "author": { "name": "soulmz" },
+    "main": "main.js",
+    "engines": { "alma": "^0.1.0" },
+    "type": "ui",
+    "permissions": ["chat:read", "network:fetch", "notifications", "settings:read"],
+    "activationEvents": ["onStartup"],
+    "contributes": {
+        "commands": [
+            { "id": "draft-assistant.predict", "title": "Draft Assistant: Predict next message" },
+            { "id": "draft-assistant.rewrite", "title": "Draft Assistant: Rewrite draft" }
+        ],
+        "configuration": {
+            "title": "Draft Assistant",
+            "properties": {
+                "draftAssistant.endpoint": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Full URL of an independent OpenAI-compatible chat completions endpoint. Use HTTPS or HTTP on loopback."
+                },
+                "draftAssistant.model": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Model served by the configured endpoint."
+                },
+                "draftAssistant.enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Allow sending drafts and the current chat's latest exchange to the configured endpoint for inference."
+                },
+                "draftAssistant.autoPredict": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Generate a suggestion after a reply in the active chat when data sharing is enabled."
+                }
+            }
+        }
+    }
+}
