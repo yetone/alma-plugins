@@ -1,0 +1,29 @@
+{
+    "id": "tokenjuice",
+    "name": "Tokenjuice",
+    "version": "1.0.0",
+    "description": "Reduce successful Bash output with the locally installed Tokenjuice CLI",
+    "author": { "name": "Vincent Koc", "url": "https://github.com/vincentkoc" },
+    "main": "main.js",
+    "engines": { "alma": "^0.1.0" },
+    "type": "transform",
+    "permissions": ["filesystem:read", "settings:read"],
+    "activationEvents": ["onStartup"],
+    "contributes": {
+        "configuration": {
+            "title": "Tokenjuice",
+            "properties": {
+                "tokenjuice.executablePath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Absolute path to the installed tokenjuice executable. Empty disables wrapping."
+                },
+                "tokenjuice.shellPath": {
+                    "type": "string",
+                    "default": "/bin/bash",
+                    "description": "Absolute path to Bash used to evaluate the original command."
+                }
+            }
+        }
+    }
+}
