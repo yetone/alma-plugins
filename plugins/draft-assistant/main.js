@@ -14,17 +14,25 @@ function getText(content) {
         .map((part) => part.text).join('\n').trim();
 }
 
-function lastTurn(messages, threadId, reply) {
+function hookInput(event) {
+    return event?.input ?? event;
+}
+
+function lastTurn(messages, threadId, reply, replyId) {
     const turn = [];
     for (let index = messages.length - 1; index >= 0; index--) {
         const message = messages[index];
-        if (message.threadId !== threadId || (message.role !== 'user' && message.role !== 'assistant')) continue;
+        // getMessages is already scoped to this thread. Some host records omit the thread ID.
+        if (message.threadId != null && message.threadId !== threadId) continue;
+        const role = message.role ?? message.content?.role;
+        if (role !== 'user' && role !== 'assistant') continue;
         const content = getText(message.content).slice(0, MAX_TURN_TEXT);
-        if (message.role === 'user') {
+        if (role === 'user') {
             if (!content) return [];
             turn.unshift({ role: 'user', content });
             break;
         }
+        if (!turn.length && !reply && replyId && replyId !== (message.content?.id ?? message.id)) return [];
         if (content && !turn.length) turn.unshift({ role: 'assistant', content });
     }
     if (turn[0]?.role !== 'user') return [];
@@ -153,8 +161,7 @@ async function activate(context) {
                 result = cached.text;
             } else {
                 const reply = event ? getText(event.response?.content) : '';
-                if (event && !reply) return;
-                const turn = lastTurn(await chat.getMessages(thread.id), thread.id, reply);
+                const turn = lastTurn(await chat.getMessages(thread.id), thread.id, reply, event?.message?.id);
                 if (!await current(operation)) return;
                 if (!turn.length) {
                     if (!automatic) notice('A completed exchange is needed to predict the next message.');
@@ -199,8 +206,13 @@ async function activate(context) {
     const subscriptions = [
         commands.register('predict', () => run('predict')),
         commands.register('rewrite', () => run('rewrite')),
-        events.on('chat.message.didReceive', (input) => { void run('predict', input); }),
-        events.on('chat.message.willSend', ({ threadId }) => {
+        events.on('chat.message.didReceive', (event) => {
+            const input = hookInput(event);
+            if (input?.threadId) void run('predict', input);
+        }),
+        events.on('chat.message.willSend', (event) => {
+            const threadId = hookInput(event)?.threadId;
+            if (!threadId) return;
             if ([activeOperation?.threadId, prediction?.threadId, accepted?.threadId].includes(threadId)) invalidate();
         }, { priority: 100 }),
         events.on('thread.activated', () => invalidate()),

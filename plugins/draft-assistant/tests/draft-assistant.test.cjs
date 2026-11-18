@@ -14,7 +14,7 @@ const messages = [
 async function fixture(t, enabled = true) {
     const { activate } = require('../main.js');
     const f = {
-        active: { id: 'current' }, commands: new Map(), hooks: new Map(), settings: new Map(),
+        active: { id: 'current' }, messages, commands: new Map(), hooks: new Map(), settings: new Map(),
         bodies: [], previews: [], inputs: [], notices: [], confirm: true,
     };
     const server = createServer(async (request, response) => {
@@ -39,7 +39,7 @@ async function fixture(t, enabled = true) {
         commands: { register: register(f.commands) },
         events: { on: register(f.hooks) },
         settings: { get: (key, fallback) => f.settings.get(key) ?? fallback, onDidChange: () => ({ dispose() {} }) },
-        chat: { getActiveThread: async () => f.active, getMessages: async () => messages },
+        chat: { getActiveThread: async () => f.active, getMessages: async () => f.messages },
         ui: {
             showInputBox: async (options) => { f.inputs.push(options); return options.value ?? 'need an example plz'; },
             showConfirmDialog: async (text) => { f.previews.push(text); await f.onPreview?.(); return f.confirm; },
@@ -143,4 +143,26 @@ test('sending invalidates pending predictions and does not transform the message
     assert.equal(f.bodies.length, 1);
     assert.equal(f.previews.length, 0);
     assert.deepEqual(output, {});
+});
+
+
+test('prediction reads canonical UI messages returned by the host observer', async (t) => {
+    const f = await fixture(t);
+    f.messages = [
+        { role: 'user', content: { id: 'u', parts: [{ type: 'text', text: 'Canonical user text' }] } },
+        { content: { id: 'a', role: 'assistant', parts: [{ type: 'text', text: 'Canonical reply text' }] } },
+    ];
+    await f.commands.get('predict')();
+    assert.equal(f.bodies.length, 1);
+    assert.match(JSON.stringify(f.bodies), /Canonical user text.*Canonical reply text/);
+});
+
+test('wrapped reply hooks can use a persisted assistant message', { timeout: 3000 }, async (t) => {
+    const f = await fixture(t);
+    f.settings.set('draftAssistant.autoPredict', true);
+    const ready = new Promise((resolve) => { f.onNotice = resolve; });
+    f.hooks.get('chat.message.didReceive')({ input: { threadId: 'current', message: { id: 'two' } } });
+    assert.match(await ready, /suggestion is ready/);
+    assert.equal(f.bodies.length, 1);
+    assert.match(JSON.stringify(f.bodies), /Use for await/);
 });
