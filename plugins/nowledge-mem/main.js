@@ -1,3 +1,4 @@
+import { createBridgeStartupHint } from "./agent-bridge-startup.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
@@ -756,6 +757,7 @@ export async function activate(context) {
 		threadSyncTimeoutMs,
 	});
 	const recalledThreads = new Set();
+	const bridgeHint = createBridgeStartupHint();
 
 	let recallPolicy = resolveRecallPolicy(context.settings, logger);
 	let autoCapture = Boolean(
@@ -1080,23 +1082,25 @@ export async function activate(context) {
 				? input.source.trim().slice(0, 120)
 				: "alma";
 
-			// Dedup check: skip save at ≥90% similarity to avoid duplicates.
+			// Dedup check: A search score is not similarity: some backends scale scores to the top hit
+			// of each batch, so the first result can read 1.0 for a merely related
+			// Memory (https://github.com/nowledge-co/mem/issues/11091). Skip only an
+			// exact duplicate (same normalized content); the backend's own dedup and
+			// EVOLVES review handle near duplicates.
 			// Best-effort — never blocks save on search failure.
 			try {
 				const dedupQuery = title || text.slice(0, 200);
 				const existing = await client.search(dedupQuery, 3);
-				if (existing.length > 0 && existing[0].score >= 0.9) {
-					const top = existing[0];
-					logger.info?.(
-						`nowledge-mem store: skipped — near-identical memory exists: ${top.id} (${(top.score * 100).toFixed(0)}%)`,
-					);
+				const norm = (v) => String(v ?? "").toLowerCase().replace(/\s+/gu, " ").trim();
+				const top = existing.find((m) => norm(m.content) === norm(text));
+				if (top) {
+					logger.info?.(`nowledge-mem store: skipped — identical memory exists: ${top.id}`);
 					return {
 						ok: true,
 						skipped: true,
 						reason: "duplicate",
 						existingId: top.id,
 						existingTitle: top.title,
-						similarity: top.score,
 					};
 				}
 			} catch {
@@ -1942,12 +1946,12 @@ export async function activate(context) {
 		}
 		await captureRecords(threadId);
 
-		// Recall injection
-		if (!recallInjectionEnabled) return;
 		if (!currentContent || !currentContent.trim()) return;
+		const hint = bridgeHint(threadId);
 
+		// Recall injection
 		const allowAutoRecall =
-			currentContent.length >= 8 &&
+			recallInjectionEnabled && currentContent.length >= 8 &&
 			!(recallFrequency === "thread_once" && recalledThreads.has(threadId));
 
 		if (allowAutoRecall) {
@@ -1969,15 +1973,18 @@ export async function activate(context) {
 					contextBundle,
 					includeCliPlaybook: injectCliPlaybook,
 				});
-				if (contextBlock && payload.setContent(`${contextBlock}\n\n${currentContent}`)) {
+				const sections = [hint, contextBlock, currentContent].filter(Boolean);
+				if (contextBlock && payload.setContent(sections.join("\n\n"))) {
 					if (recallFrequency === "thread_once") {
 						recalledThreads.add(threadId);
 					}
+					return;
 				}
 			} catch (recallErr) {
 				logger.error?.(`nowledge-mem: recall injection failed: ${recallErr instanceof Error ? recallErr.message : String(recallErr)}`);
 			}
 		}
+		if (hint) payload.setContent(`${hint}\n\n${currentContent}`);
 	});
 
 	// --- Hook: didReceive (capture AI response + start idle timer) ---
