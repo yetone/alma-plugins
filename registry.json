@@ -1,7 +1,7 @@
 {
     "$schema": "./registry.schema.json",
     "version": "1.0.0",
-    "lastUpdated": "2026-11-10T14:28:05Z",
+    "lastUpdated": "2026-11-24T09:17:15Z",
     "plugins": [
         {
             "id": "hello-world",
@@ -151,6 +151,22 @@
             "tags": ["memory", "knowledge", "recall", "graph", "local-first"],
             "repository": "https://github.com/yetone/alma-plugins",
             "path": "plugins/nowledge-mem",
+            "downloads": 0,
+            "rating": 0,
+            "featured": false
+        },
+        {
+            "id": "deepseek-harness-acp",
+            "name": "DeepSeek Harness (ACP)",
+            "version": "0.2.1",
+            "description": "Auto-register a locally installed DeepSeek Harness (dsh) as an Alma ACP provider: probes that dsh really boots, keeps an existing config in sync idempotently, runs a connection test and enables its model.",
+            "author": {
+                "name": "raitozjz"
+            },
+            "type": ["provider"],
+            "tags": ["acp", "deepseek-harness", "dsh", "agent", "provider"],
+            "repository": "https://github.com/yetone/alma-plugins",
+            "path": "plugins/deepseek-harness-acp",
             "downloads": 0,
             "rating": 0,
             "featured": false

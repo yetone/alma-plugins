@@ -1,0 +1,31 @@
+{
+  "id": "deepseek-harness-acp",
+  "name": "DeepSeek Harness (ACP)",
+  "version": "0.2.1",
+  "description": "把本机 DeepSeek Harness 注册为 Alma 的 ACP provider：实测 dsh 能否启动、幂等对齐已有配置、创建后做连接测试并启用模型。",
+  "author": {
+    "name": "DeepSeek Harness"
+  },
+  "main": "main.js",
+  "engines": {
+    "alma": ">=0.4.0"
+  },
+  "type": "provider",
+  "activationEvents": [
+    "onStartup"
+  ],
+  "permissions": [
+    "network:localhost",
+    "notifications",
+    "filesystem:read"
+  ],
+  "keywords": [
+    "alma",
+    "alma-plugin",
+    "dsh",
+    "deepseek-harness",
+    "acp",
+    "provider"
+  ],
+  "license": "MIT"
+}
