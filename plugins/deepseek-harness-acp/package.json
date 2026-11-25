@@ -1,0 +1,12 @@
+{
+  "name": "alma-plugin-deepseek-harness-acp",
+  "version": "0.2.1",
+  "description": "Alma plugin: register DeepSeek Harness (dsh) as an ACP provider",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "test": "node tests/run-tests.mjs"
+  },
+  "license": "MIT"
+}
