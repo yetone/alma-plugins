@@ -1,0 +1,45 @@
+{
+    "id": "project-sidebar-recency",
+    "name": "Project Sidebar Recency",
+    "version": "1.0.0",
+    "description": "In project sidebar mode, puts the project with the most recent conversation on top. Projects are ordered by their newest thread instead of a hand-dragged list.",
+    "author": {
+        "name": "jhs1873"
+    },
+    "main": "main.js",
+    "engines": {
+        "alma": "^0.1.0"
+    },
+    "type": "integration",
+    "permissions": [
+        "network:localhost",
+        "notifications"
+    ],
+    "activationEvents": [
+        "onStartup"
+    ],
+    "contributes": {
+        "commands": [
+            {
+                "id": "projectSidebarRecency.sortNow",
+                "title": "Sort Projects by Latest Conversation",
+                "category": "Project Sidebar"
+            }
+        ],
+        "configuration": {
+            "title": "Project Sidebar Recency",
+            "properties": {
+                "projectSidebarRecency.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Automatically order projects by their most recent conversation."
+                },
+                "projectSidebarRecency.debounceMs": {
+                    "type": "number",
+                    "default": 1500,
+                    "description": "How long to wait after a conversation changes before re-sorting (milliseconds)."
+                }
+            }
+        }
+    }
+}

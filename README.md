@@ -72,6 +72,19 @@ A transform plugin that enhances prompts with additional context and instruction
 
 **Type:** `transform`
 
+### Project Sidebar Recency (`plugins/project-sidebar-recency`)
+
+An integration plugin that keeps the project sidebar ordered by **most recent conversation**, so the project you were just working in rises to the top instead of staying wherever you last dragged it.
+
+**Features:**
+- Ranks projects by the `updatedAt` of their newest thread
+- Projects without conversations sink below active ones, keeping their relative order
+- Rolls worktree/session workspaces up into their parent project
+- No restart needed: writes `ui.projectSidebarOrder` over the local API and Alma re-sorts on `settings_updated`
+- Zero dependencies, plain CommonJS, ships with unit tests
+
+**Type:** `integration`
+
 ## Plugin Structure
 
 Each plugin must have a `manifest.json` file and a main entry point:
