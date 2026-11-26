@@ -219,7 +219,8 @@ Plugins must declare required permissions in their manifest:
 1. Copy your plugin folder to the Alma plugins directory:
    - **macOS**: `~/Library/Application Support/Alma/plugins/`
    - **Windows**: `%APPDATA%/Alma/plugins/`
-   - **Linux**: `~/.config/Alma/plugins/`
+   - **Linux**: Read `globalPath` from the local server’s `GET /api/plugins-path`.
+     Alma Server 0.4.1176 defaults to `~/.config/alma/plugins/`.
 
 2. Restart Alma or use the "Refresh" button in Settings > Plugins
 
